@@ -128,11 +128,13 @@ CREATE TABLE IF NOT EXISTS [ayarlar] (
 );
 
 -- Telegram bildirim kuyruğu: olay işle birlikte yazılır, cevap gittikten sonra gönderilir; hata olursa
--- yeniden denenir. olay = yeni | cozuldu | kapandi | yeniden_acildi | sure_24 | sure_doldu | uzatildi
+-- yeniden denenir. olay = yeni | cozuldu | kapandi | yeniden_acildi | sure_24 | sure_doldu | uzatildi | silindi
 CREATE TABLE IF NOT EXISTS [bildirimler] (
   [id] INTEGER PRIMARY KEY AUTOINCREMENT,
   [olay] TEXT NOT NULL,
   [is_id] TEXT,
+  [is_no] INTEGER,
+  -- iş silinse de listede numarası görünsün diye
   [metin] TEXT NOT NULL,
   [olusturma] TEXT,
   [gonderim] TEXT,

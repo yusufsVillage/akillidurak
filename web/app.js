@@ -1736,7 +1736,7 @@ function renderUsersPage(app, topbarActions) {
 /* ======================= Telegram notifications (administrator) ======================= */
 // The bot token and group id live in the WSGI file (secrets stay out of the app); this card shows whether they are
 // set, sends a test message, finds the group's chat id, and lists the latest notifications.
-const TELEGRAM_EVENTS = { yeni: 'Yeni iş', cozuldu: 'Çözüldü', kapandi: 'Kapatıldı', yeniden_acildi: 'Yeniden açıldı', sure_24: '24 saat kaldı', sure_doldu: 'Süre doldu', uzatildi: 'Süre uzatıldı' };
+const TELEGRAM_EVENTS = { yeni: 'Yeni iş', cozuldu: 'Çözüldü', kapandi: 'Kapatıldı', yeniden_acildi: 'Yeniden açıldı', sure_24: '24 saat kaldı', sure_doldu: 'Süre doldu', uzatildi: 'Süre uzatıldı', silindi: 'Silindi' };
 let telegramInfo = null;
 let telegramInfoAt = 0;
 function loadTelegramInfo(force) {
@@ -1765,7 +1765,7 @@ function telegramCardHtml() {
     </div>
     ${!info ? '<p class="muted-text">Yükleniyor…</p>' : `
       <div class="tag-row" style="margin-bottom:10px;">Bot anahtarı ${flag(info.tokenSet, 'tanımlı', 'tanımlı değil')} · Grup ${flag(info.chatSet, 'tanımlı', 'tanımlı değil')}</div>
-      <p class="hint" style="margin:0 0 12px;">Gönderilenler: yeni iş, çözüldü, kapatıldı, yeniden açıldı, süreye 24 saat kala, süre doldu, süre uzatıldı. Her mesajda iş numarası, durak adı ve işin bağlantısı olur. ${ready ? '' : 'Kurulum: README > Telegram bildirimleri (bot anahtarı ve grup kimliği PythonAnywhere WSGI dosyasına yazılır).'}</p>
+      <p class="hint" style="margin:0 0 12px;">Gönderilenler: yeni iş, çözüldü, kapatıldı, yeniden açıldı, süreye 24 saat kala, süre doldu, süre uzatıldı, iş silindi. Her mesajda iş numarası ve durak adı, silinmemiş işlerde işin bağlantısı olur. ${ready ? '' : 'Kurulum: README > Telegram bildirimleri (bot anahtarı ve grup kimliği PythonAnywhere WSGI dosyasına yazılır).'}</p>
       ${info.recent.length ? `<div class="table-wrap"><table class="compact-table">
         <thead><tr><th>Zaman</th><th>Olay</th><th>İş</th><th>Durum</th></tr></thead>
         <tbody>${info.recent.map(n => `<tr>

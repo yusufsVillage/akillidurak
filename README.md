@@ -170,8 +170,9 @@ ortam ve gizli değer içermez). **Files** sekmesinde `/home/KULLANICI/` içine 
 ## Telegram bildirimleri
 
 Uygulama şu durumlarda bir Telegram grubuna mesaj gönderir: yeni iş, iş çözüldü, iş kapatıldı, iş yeniden açıldı,
-süreye 24 saat kaldı, süre doldu, süre uzatıldı. Her mesajda iş numarası (#12), durak adı ve işin bağlantısı vardır;
-içerik duruma göre değişir (teknisyen, son tarih, çözüm süresi, kullanılan malzemeler, mazeret…).
+süreye 24 saat kaldı, süre doldu, süre uzatıldı, iş silindi. Her mesajda iş numarası (#12) ve durak adı, silinmemiş
+işlerde işin bağlantısı vardır; içerik duruma göre değişir (teknisyen, son tarih, çözüm süresi, kullanılan
+malzemeler, mazeret, silen kişi ve silinen fotoğraf sayısı…).
 
 1. **Bot oluşturun:** Telegram'da **@BotFather** ile konuşup `/newbot` yazın; bota bir ad (ör. Akıllı Durak Takip) ve
    `bot` ile biten bir kullanıcı adı verin. BotFather'ın verdiği anahtarı (token) kopyalayın; kimseyle paylaşmayın.

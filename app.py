@@ -924,6 +924,8 @@ def collection_record(col, rid):
         files = []
         with conn:
             if col == 'tasks':
+                if row:  # the message is written while the job (and its photos) can still be read
+                    enqueue_notification(conn, 'silindi', rid, g.user['fullName'])
                 files = [r[0] for r in conn.execute('SELECT [dosya] FROM [is_fotograflari] WHERE [is_id]=?', (rid,))]
                 for child in ('is_malzemeleri', 'is_gecmisi', 'is_fotograflari', 'is_sure_uzatmalari'):
                     conn.execute(f'DELETE FROM [{child}] WHERE [is_id]=?', (rid,))
@@ -1220,6 +1222,7 @@ def build_message(conn, event, task_id, actor='', base_url='', extra=None):
         'sure_24': f'⏳ <b>İş {no}: süre dolmak üzere</b>',
         'sure_doldu': f'⚠️ <b>İş {no}: süre doldu</b>',
         'uzatildi': f'🗓 <b>İş {no}: süre uzatıldı</b>',
+        'silindi': f'🗑 <b>İş {no} silindi</b>',
     }
     lines = [heads[event]]
     if s:
@@ -1268,6 +1271,13 @@ def build_message(conn, event, task_id, actor='', base_url='', extra=None):
         if extra.get('reason'):
             lines.append(f"💬 Mazeret: {_e(_short(extra['reason']))}")
         lines.append(f'✍️ Uzatan: {_e(actor)}')
+    elif event == 'silindi':
+        lines.append(f"📌 Son durum: {STATUS_TEXT.get(t['durum'], t['durum'] or '—')} · {who}")
+        photos = conn.execute('SELECT COUNT(*) FROM [is_fotograflari] WHERE [is_id]=?', (task_id,)).fetchone()[0]
+        if photos:
+            lines.append(f'📷 {photos} fotoğrafı da silindi')
+        lines.append(f'✍️ Silen: {_e(actor)}')
+        return '\n'.join(lines)  # no link: the job no longer exists
     if base_url:
         lines.append(f'🔗 {_e(base_url)}/#task-{_e(task_id)}')
     return '\n'.join(lines)
@@ -1280,8 +1290,9 @@ def enqueue_notification(conn, event, task_id, actor='', base_url='', extra=None
         return
     text = build_message(conn, event, task_id, actor, base_url, extra)
     if text:
-        conn.execute('INSERT INTO [bildirimler] ([olay],[is_id],[metin],[olusturma]) VALUES (?,?,?,?)',
-                     (event, task_id, text, now_iso()))
+        number = conn.execute('SELECT [is_no] FROM [isler] WHERE [id]=?', (task_id,)).fetchone() if task_id else None
+        conn.execute('INSERT INTO [bildirimler] ([olay],[is_id],[is_no],[metin],[olusturma]) VALUES (?,?,?,?,?)',
+                     (event, task_id, number[0] if number else None, text, now_iso()))
         _outbox_dirty = True
 
 
@@ -1395,7 +1406,8 @@ def _schedule_notifications(resp):
 @app.get('/api/telegram/status')
 @admin_required
 def telegram_status():
-    rows = db().execute('SELECT b.[id], b.[olay], b.[olusturma], b.[gonderim], b.[deneme], b.[hata], i.[is_no] '
+    rows = db().execute('SELECT b.[id], b.[olay], b.[olusturma], b.[gonderim], b.[deneme], b.[hata], '
+                        'COALESCE(b.[is_no], i.[is_no]) AS [is_no] '
                         'FROM [bildirimler] AS b LEFT JOIN [isler] AS i ON i.[id] = b.[is_id] ORDER BY b.[id] DESC LIMIT 15').fetchall()
     return jsonify(
         tokenSet=bool(os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()),
