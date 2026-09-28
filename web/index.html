@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Durak Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="authRoot" hidden></div>
+
+<div class="app-shell" hidden>
+  <div class="drawer-overlay" id="drawerOverlay" data-action="closeSidebar" hidden></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <span class="brand-mark">DO</span>
+      <div class="brand-text">
+        <strong>Durak Ops</strong>
+        <span>Akıllı Durak Ekranları</span>
+      </div>
+    </div>
+    <nav class="sidebar-nav" id="sidebarNav">
+      <a href="#panel" class="nav-link" data-route="panel">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>
+        Panel
+      </a>
+      <a href="#tasks" class="nav-link" data-route="tasks">
+        <svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 3.5h6v2.5H9z"/><path d="M8.5 13l2 2 4-4.5"/></svg>
+        İşler
+      </a>
+      <a href="#screens" class="nav-link" data-route="screens">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M9 20h6M12 16v4"/></svg>
+        Ekranlar
+      </a>
+      <a href="#map" class="nav-link" data-route="map">
+        <svg viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg>
+        Harita
+      </a>
+      <a href="#technicians" class="nav-link" data-route="technicians">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></svg>
+        Teknisyenler
+      </a>
+      <a href="#materials" class="nav-link" data-route="materials">
+        <svg viewBox="0 0 24 24"><path d="M3 8l9-4 9 4-9 4-9-4z"/><path d="M3 8v9l9 4 9-4V8"/><path d="M12 12v9"/></svg>
+        Malzeme Kataloğu
+      </a>
+      <a href="#reports" class="nav-link" data-route="reports">
+        <svg viewBox="0 0 24 24"><path d="M4 20V10M11 20V4M18 20v-7"/></svg>
+        Raporlar
+      </a>
+      <a href="#users" class="nav-link" data-route="users" id="navUsers" hidden>
+        <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-5.6 6-5.6s6 2.3 6 5.6"/><path d="M15.5 4.9a3.2 3.2 0 0 1 0 6.2M18 14.8c1.9.7 3 2.6 3 5.2"/></svg>
+        Kullanıcılar
+      </a>
+    </nav>
+    <div class="sidebar-footer" id="userBox"></div>
+  </aside>
+
+  <div class="main-col">
+    <header class="topbar">
+      <button class="icon-btn" id="menuToggle" data-action="toggleSidebar" aria-label="Menü">
+        <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <h1 id="pageTitle">Panel</h1>
+      <div class="topbar-actions" id="topbarActions"></div>
+    </header>
+    <main id="app" class="content"></main>
+  </div>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toastRoot" class="toast-root" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

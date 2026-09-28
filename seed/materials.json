@@ -1,0 +1,290 @@
+[
+ {
+  "id": "adaptor-ac-dc",
+  "name": "Adaptör (AC/DC Converter)",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:14.190Z"
+ },
+ {
+  "id": "aluminyum-boru",
+  "name": "Alüminyum Boru",
+  "unit": "Metre",
+  "createdAt": "2026-09-24T11:53:19.490Z"
+ },
+ {
+  "id": "anten-4g",
+  "name": "4G Anten",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:13.497Z"
+ },
+ {
+  "id": "cat6-kablo",
+  "name": "Cat6 Kablo",
+  "unit": "Metre",
+  "createdAt": "2026-09-24T11:53:18.519Z"
+ },
+ {
+  "id": "celik-klips",
+  "name": "Çelik Klips",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:19.765Z"
+ },
+ {
+  "id": "cimento",
+  "name": "Çimento",
+  "unit": "Kilo",
+  "createdAt": "2026-09-24T11:53:20.069Z"
+ },
+ {
+  "id": "dagitim-panosu",
+  "name": "Dağıtım Panosu (40*50cm)",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:18.814Z"
+ },
+ {
+  "id": "dc-dc-converter",
+  "name": "9-36VDC In 5 VDC 20A 100W DC DC Converter",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:13.915Z"
+ },
+ {
+  "id": "driver-kart-degisimi",
+  "name": "Driver Kart Değişimi",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:14.707Z"
+ },
+ {
+  "id": "durak-kilidi",
+  "name": "Durak Kilidi",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:18.223Z"
+ },
+ {
+  "id": "durak-sokulmesi-elektrikli",
+  "name": "Durak Sökülmesi (Elektrikli)",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:15.340Z"
+ },
+ {
+  "id": "durak-sokulmesi-gunes",
+  "name": "Durak Sökülmesi (Güneş Enerjili)",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:15.672Z"
+ },
+ {
+  "id": "durak-takma-elektrikli",
+  "name": "Durak Takma (Elektrikli)",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:16.425Z"
+ },
+ {
+  "id": "durak-takma-gunes",
+  "name": "Durak Takma (Güneş Enerjili)",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:15.957Z"
+ },
+ {
+  "id": "ek-malzemesi-takim",
+  "name": "Ek Malzemesi (Takım)",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:22.207Z"
+ },
+ {
+  "id": "fan-220v",
+  "name": "220V Fan",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:10.606Z"
+ },
+ {
+  "id": "gunes-paneli-kasasi",
+  "name": "Güneş Paneli Kasası",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:24.272Z"
+ },
+ {
+  "id": "hoparlor",
+  "name": "Hoparlör",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:11.925Z"
+ },
+ {
+  "id": "hub-pil",
+  "name": "Hub Pil",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:12.873Z"
+ },
+ {
+  "id": "kablo-2x4",
+  "name": "2*4 Kablo",
+  "unit": "Metre",
+  "createdAt": "2026-09-24T11:53:17.321Z"
+ },
+ {
+  "id": "kablo-3x0-75",
+  "name": "3*0,75 Kablo",
+  "unit": "Metre",
+  "createdAt": "2026-09-24T11:53:17.922Z"
+ },
+ {
+  "id": "kablo-3x1-5",
+  "name": "3*1,5 Kablo",
+  "unit": "Metre",
+  "createdAt": "2026-09-24T11:53:17.643Z"
+ },
+ {
+  "id": "kablo-3x6",
+  "name": "3*6 Kablo",
+  "unit": "Metre",
+  "createdAt": "2026-09-24T11:53:16.695Z"
+ },
+ {
+  "id": "kablo-4x2-5",
+  "name": "4*2,5 Kablo",
+  "unit": "Metre",
+  "createdAt": "2026-09-24T11:53:17.005Z"
+ },
+ {
+  "id": "kablo-muhafaza-boru",
+  "name": "Kablo Muhafaza Plastik Boru",
+  "unit": "Metre",
+  "createdAt": "2026-09-24T11:53:19.109Z"
+ },
+ {
+  "id": "kacak-akim-rolesi",
+  "name": "Kaçak Akım Rölesi",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:23.371Z"
+ },
+ {
+  "id": "kazim-andazit",
+  "name": "Kazım İşi Andazit",
+  "unit": "Metre",
+  "createdAt": "2026-09-24T11:53:21.332Z"
+ },
+ {
+  "id": "kazim-beton",
+  "name": "Kazım İşi Beton",
+  "unit": "Metre",
+  "createdAt": "2026-09-24T11:53:20.710Z"
+ },
+ {
+  "id": "kazim-parke",
+  "name": "Kazım İşi Parke",
+  "unit": "Metre",
+  "createdAt": "2026-09-24T11:53:21.038Z"
+ },
+ {
+  "id": "kazim-toprak",
+  "name": "Kazım İşi Toprak",
+  "unit": "Metre",
+  "createdAt": "2026-09-24T11:53:20.432Z"
+ },
+ {
+  "id": "lityum-pil",
+  "name": "Lityum Pil 24V/33Ah 12V 66Ah",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:23.692Z"
+ },
+ {
+  "id": "mprt-sarj-kontrol",
+  "name": "MPRT Şarj Kontrol Cihazı 20&30A",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:15.043Z"
+ },
+ {
+  "id": "nova-4g-modul",
+  "name": "Nova-4G Modül",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:11.216Z"
+ },
+ {
+  "id": "novastar",
+  "name": "Novastar",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:10.905Z"
+ },
+ {
+  "id": "p4-rgb-panel",
+  "name": "P4 RGB Panel",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:10.314Z"
+ },
+ {
+  "id": "p6-mainboard",
+  "name": "P6 Tip Ekran Mainboard",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:09.965Z"
+ },
+ {
+  "id": "p6-rgb-panel",
+  "name": "P6 RGB Panel",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:22.780Z"
+ },
+ {
+  "id": "plastik-kanal",
+  "name": "Plastik Kanal",
+  "unit": "Metre",
+  "createdAt": "2026-09-24T11:53:21.650Z"
+ },
+ {
+  "id": "priz-sivaustu-ray",
+  "name": "Sıva Üstü Priz (Ray Tipi)",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:22.495Z"
+ },
+ {
+  "id": "ray",
+  "name": "Ray",
+  "unit": "Metre",
+  "createdAt": "2026-09-24T11:53:21.934Z"
+ },
+ {
+  "id": "servis-ucreti-haftaici",
+  "name": "Servis Ücreti (Hafta İçi)",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:24.573Z"
+ },
+ {
+  "id": "servis-ucreti-haftasonu",
+  "name": "Servis Ücreti (Hafta Sonu)",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:24.868Z"
+ },
+ {
+  "id": "sigorta-16a",
+  "name": "Sigorta Değişimi (16A)",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:23.084Z"
+ },
+ {
+  "id": "solar-panel-350w",
+  "name": "350 Watt Mono Kristal Solar Panel",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:23.971Z"
+ },
+ {
+  "id": "termostat",
+  "name": "Termostat",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:11.618Z"
+ },
+ {
+  "id": "timer-2satir-lcd",
+  "name": "Tımer 2 Satır LCD Ekran",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:12.569Z"
+ },
+ {
+  "id": "timer-4620-mikroislemci",
+  "name": "Tımer 4620 Mikroişlemci",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:12.242Z"
+ },
+ {
+  "id": "timer-degisimi",
+  "name": "Tımer Değişimi",
+  "unit": "Adet",
+  "createdAt": "2026-09-24T11:53:13.191Z"
+ }
+]

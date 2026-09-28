@@ -1,0 +1,3 @@
+# Text files are stored with LF; Windows batch files keep CRLF so cmd.exe runs them correctly.
+* text=auto
+*.bat text eol=crlf

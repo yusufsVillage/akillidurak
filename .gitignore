@@ -1,0 +1,34 @@
+# GitHub'a gönderilmeyenler
+
+# Veritabanları, fotoğraflar ve yerel veriler (oturum anahtarı ve giriş bilgisi içerir)
+yerel_veri/
+data/
+uploads/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.mdb
+*.ldb
+*.yedek
+
+# Eski Windows sürümünün yedeği (eski veritabanı, eski kullanıcıların şifre özetleri)
+yedek_windows_surumu/
+
+# Python sanal ortamı ve üretilen dosyalar
+.venv/
+venv/
+__pycache__/
+*.pyc
+dist/
+
+# Gizli ayarlar ve araç dosyaları
+.env
+.env.*
+*wsgi*.py
+.claude/
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
