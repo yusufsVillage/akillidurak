@@ -86,6 +86,9 @@ const API_ERRORS = {
   exists: 'Bu kayıt zaten var.',
   bad_value: 'Geçersiz bir değer girildi.',
   bad_assignee: 'Seçilen teknisyen bulunamadı; sayfayı yenileyip tekrar deneyin.',
+  closed_task_delete: 'Kapanmış iş yalnızca sistem yöneticisi tarafından silinebilir (fotoğrafları kanıttır).',
+  too_many_photos: 'Bir işe en fazla 20 fotoğraf yüklenebilir.',
+  disk_full: 'Sunucu diski dolmak üzere; yeni fotoğraf yüklenemiyor. Sistem yöneticisine haber verin.',
   telegram_not_configured: 'Telegram ayarları eksik: WSGI dosyasına TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID yazılıp Reload edilmeli.',
   telegram_no_token: 'Önce WSGI dosyasına TELEGRAM_BOT_TOKEN yazılıp Reload edilmeli.',
   too_long: 'Girilen metin çok uzun.',
@@ -344,8 +347,8 @@ function typePill(type) {
   const cls = { ariza: 'pill-type-ariza', icerik: 'pill-type-icerik', genel: 'pill-type-genel' }[type] || 'pill-neutral';
   return `<span class="pill ${cls}">${esc(TASK_TYPES[type] || type)}</span>`;
 }
-function statusPill(status) { return `<span class="pill pill-status-${status}">${esc(STATUS_LABELS[status] || status)}</span>`; }
-function prioPill(p) { return `<span class="pill pill-prio-${p}">${esc(PRIORITY_LABELS[p] || p)}</span>`; }
+function statusPill(status) { return `<span class="pill pill-status-${esc(status)}">${esc(STATUS_LABELS[status] || status)}</span>`; }
+function prioPill(p) { return `<span class="pill pill-prio-${esc(p)}">${esc(PRIORITY_LABELS[p] || p)}</span>`; }
 function screenStatusPill(s) {
   const map = { aktif: 'pill-good', arizali: 'pill-crit', bakimda: 'pill-warn', pasif: 'pill-neutral' };
   return `<span class="pill ${map[s] || 'pill-neutral'}">${esc(SCREEN_STATUS_LABELS[s] || s)}</span>`;
@@ -579,7 +582,7 @@ function renderTaskDetailPage(app, topbarActions, id) {
   if (!task) { app.innerHTML = (dbAvailable ? '' : bannerNoDb()) + emptyStateHtml('İş bulunamadı. Silinmiş olabilir.'); return; }
   topbarActions.innerHTML = `
     <button class="btn btn-secondary btn-sm" data-action="editTask" data-id="${task.id}">Düzenle</button>
-    <button class="btn btn-danger btn-sm" data-action="deleteTask" data-id="${task.id}">Sil</button>
+    ${!isClosedStatus(task.status) || currentUser?.isAdmin ? `<button class="btn btn-danger btn-sm" data-action="deleteTask" data-id="${task.id}">Sil</button>` : ''}
   `;
   const usedMaterials = task.usedMaterials || [];
   const history = [...(task.history || [])].sort((a, b) => new Date(b.ts) - new Date(a.ts));
@@ -1041,7 +1044,7 @@ async function deleteTask(id) {
     await db.doc('tasks/' + id).delete();
     showToast('İş silindi');
     if (currentRoute().name === 'taskDetail') location.hash = '#tasks';
-  } catch (e) { showToast('Silinemedi', 'error'); }
+  } catch (e) { showToast(apiErrorText(e, 'Silinemedi'), 'error'); }
 }
 
 /* ======================= Screens (ekran + durak birleşik kaydı) ======================= */
@@ -2276,7 +2279,14 @@ function renderReportsPage(app, topbarActions) {
   app.innerHTML = (dbAvailable ? '' : bannerNoDb()) + content;
 }
 
-function csvEscape(v) { const s = String(v ?? ''); if (/[",\n;]/.test(s)) return '"' + s.replace(/"/g, '""') + '"'; return s; }
+// Text starting with = + - @ (or a tab/CR) would run as a formula in Excel ("CSV injection"); prefix it with '
+// so it stays plain text. Numbers like -1,5 are left as they are.
+function csvEscape(v) {
+  let s = String(v ?? '');
+  if (/^[=+\-@\t\r]/.test(s) && !/^-?\d+([.,]\d+)?$/.test(s)) s = "'" + s;
+  if (/[",\n\r;]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
 async function downloadCsv(filename, headers, rows) {
   const lines = [headers, ...rows].map(r => r.map(csvEscape).join(';'));
   const csv = '﻿' + lines.join('\r\n');

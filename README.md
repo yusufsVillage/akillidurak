@@ -35,7 +35,7 @@ Ayarlar koda, depoya veya zip'e yazılmaz; PythonAnywhere'deki WSGI dosyasında 
 | `UPLOAD_DIR` | Hayır | Fotoğraf klasörü. Verilmezse veritabanının yanında `uploads/` |
 | `TELEGRAM_BOT_TOKEN` | Hayır | Telegram bildirimleri için @BotFather'ın verdiği bot anahtarı. Gizlidir |
 | `TELEGRAM_CHAT_ID` | Hayır | Bildirimlerin gideceği Telegram grubunun kimliği (aşağıda nasıl bulunur) |
-| `PUBLIC_URL` | Hayır | Telegram mesajlarındaki bağlantılar için sitenin adresi; verilmezse gelen istekten alınır |
+| `PUBLIC_URL` | Hayır | Telegram mesajlarındaki bağlantılar için sitenin adresi; verilmezse PythonAnywhere hesap adından (`https://KULLANICI.pythonanywhere.com`) hesaplanır. Kendi alan adınız varsa yazın |
 
 Kullanıcı ekleme, düzenleme ve şifre sıfırlama yalnızca `ADMIN_USERNAME` hesabına açıktır; diğer kullanıcılar
 sistemin geri kalanını tam yetkiyle kullanır. Yeni kullanıcıya rastgele bir geçici şifre verilir ve yalnızca bir kez

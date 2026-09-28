@@ -39,9 +39,14 @@ DATABASE_PATH = os.path.abspath(os.environ.get('DATABASE_PATH') or os.path.join(
 UPLOAD_DIR = os.path.abspath(os.environ.get('UPLOAD_DIR') or os.path.join(os.path.dirname(DATABASE_PATH), 'uploads'))
 
 MAX_PHOTO_BYTES = 5 * 1024 * 1024
+MAX_PHOTOS_PER_TASK = 20
 DISK_QUOTA_BYTES = 512 * 1024 * 1024  # PythonAnywhere free plan, whole account
-SESSION_HOURS = 12
-LOGIN_MAX_FAILURES = 10
+DISK_GUARD_BYTES = 450 * 1024 * 1024  # photos + database; uploads stop here so the database can still grow
+SESSION_HOURS = 12                    # idle limit (renewed while used)
+SESSION_MAX_DAYS = 30                 # absolute limit from login, however much the session is used
+LOGIN_MAX_FAILURES = 10               # per visitor address and user name
+LOGIN_MAX_FAILURES_PER_USER = 50      # per user name from all addresses
+LOGIN_MAX_FAILURES_PER_IP = 100       # per visitor address over all user names
 LOGIN_WINDOW_SECONDS = 15 * 60
 MIN_PASSWORD_LENGTH = 8
 MAX_TEXT = 500
@@ -65,6 +70,8 @@ _secret = os.environ.get('SECRET_KEY')
 if not _secret:
     _secret = secrets.token_hex(32)
     log.warning('SECRET_KEY tanimli degil: gecici bir anahtar uretildi; uygulama her yeniden basladiginda oturumlar kapanir.')
+elif len(_secret) < 32:
+    log.warning('SECRET_KEY cok kisa (%s karakter): en az 32 karakterlik rastgele bir deger kullanin.', len(_secret))
 
 app.config.update(
     SECRET_KEY=_secret,
@@ -182,17 +189,17 @@ COLLECTIONS = {
         F('adres', 'adres'), F('bolgeKod', 'bolge_kod'), F('binaIdNo', 'bina_id_no'), F('dysOnayNo', 'dys_onay_no'),
         F('enerjiBilgisi', 'enerji_bilgisi'), F('elektrikKaynagi', 'elektrik_kaynagi'), F('ekranTipi', 'ekran_tipi'),
         F('simNo', 'sim_no'), F('enlem', 'enlem', 'num'), F('boylam', 'boylam', 'num'),
-        F('kontrolTarihi', 'kontrol_tarihi'), F('ozelNot', 'ozel_not', 'memo'), F('model', 'model'),
-        F('serialNo', 'seri_no'), F('installDate', 'kurulum_tarihi'), F('status', 'durum'),
-        F('createdAt', 'olusturma'), F('updatedAt', 'guncelleme')]),
+        F('kontrolTarihi', 'kontrol_tarihi', 'date'), F('ozelNot', 'ozel_not', 'memo'), F('model', 'model'),
+        F('serialNo', 'seri_no'), F('installDate', 'kurulum_tarihi', 'date'), F('status', 'durum'),
+        F('createdAt', 'olusturma', 'date'), F('updatedAt', 'guncelleme', 'date')]),
     'materials': ('malzemeler', [
-        F('name', 'ad'), F('unit', 'birim'), F('createdAt', 'olusturma'), F('updatedAt', 'guncelleme')]),
+        F('name', 'ad'), F('unit', 'birim'), F('createdAt', 'olusturma', 'date'), F('updatedAt', 'guncelleme', 'date')]),
     'tasks': ('isler', [
         F('title', 'baslik'), F('type', 'tur'), F('priority', 'oncelik'), F('status', 'durum'),
         # The job's technician: a user id (users are the technicians plus the system administrator).
         F('screenId', 'ekran_id'), F('assignedTechnicianId', 'teknisyen_id'), F('serviceDayType', 'servis_gunu'),
-        F('description', 'aciklama', 'memo'), F('createdAt', 'olusturma'), F('updatedAt', 'guncelleme'),
-        F('resolvedAt', 'cozulme'), F('dueDate', 'son_tarih'), F('no', 'is_no', 'int')]),
+        F('description', 'aciklama', 'memo'), F('createdAt', 'olusturma', 'date'), F('updatedAt', 'guncelleme', 'date'),
+        F('resolvedAt', 'cozulme', 'date'), F('dueDate', 'son_tarih', 'date'), F('no', 'is_no', 'int')]),
 }
 # Given by the server, never taken from the page.
 READONLY_FIELDS = {'no'}
@@ -216,6 +223,11 @@ def to_db(value, kind):
         return number
     if isinstance(value, (dict, list)):
         raise ApiError(400, 'bad_value')
+    if kind == 'date':  # ISO date or date-time, as the page sends them (2026-09-28 or 2026-09-28T10:00:00.000Z)
+        text = str(value)
+        if len(text) > 40 or parse_iso(text) is None:
+            raise ApiError(400, 'bad_value')
+        return text
     text = str(value)
     if len(text) > (MAX_MEMO if kind == 'memo' else MAX_TEXT):
         raise ApiError(400, 'too_long')
@@ -468,6 +480,13 @@ def load_user():
     g.user = None
     uid = session.get('uid')
     if uid:
+        # Absolute limit: a session kept alive by use (the idle limit renews) still ends SESSION_MAX_DAYS after login.
+        issued = session.get('iat')
+        if issued is None:
+            session['iat'] = int(time.time())  # sessions from before this limit start counting now
+        elif time.time() - issued > SESSION_MAX_DAYS * 86400:
+            session.clear()
+            return None
         row = db().execute('SELECT * FROM [kullanicilar] WHERE [id]=?', (uid,)).fetchone()
         if row and row['aktif'] and row['oturum_surumu'] == session.get('sv'):
             g.user = user_json(row)
@@ -522,6 +541,11 @@ def _security_headers(resp):
     resp.headers.setdefault('X-Frame-Options', 'DENY')
     resp.headers.setdefault('Referrer-Policy', 'same-origin')
     resp.headers.setdefault('Content-Security-Policy', CSP)
+    # API answers carry personal data and one-time passwords: keep them out of the browser cache.
+    if request.path.startswith('/api/') and 'Cache-Control' not in resp.headers:
+        resp.headers['Cache-Control'] = 'no-store'
+    if app.config['SESSION_COOKIE_SECURE']:  # served over HTTPS: tell browsers never to use plain HTTP here
+        resp.headers.setdefault('Strict-Transport-Security', 'max-age=31536000')
     return resp
 
 
@@ -537,18 +561,47 @@ def safe_next(value):
     return value
 
 
-_failed_logins = {}
+_failed_logins = {}  # key -> times of recent failed attempts (this process)
 _dummy_hash = generate_password_hash(secrets.token_hex(16))
 
 
-def _recent_failures(username):
+def client_ip():
+    """Behind PythonAnywhere's proxy the visitor's address comes in X-Real-IP, set by the proxy itself."""
+    if os.environ.get('PYTHONANYWHERE_DOMAIN'):
+        return request.headers.get('X-Real-IP') or request.remote_addr or '?'
+    return request.remote_addr or '?'
+
+
+def _recent_failures(key):
     cutoff = time.monotonic() - LOGIN_WINDOW_SECONDS
-    fails = [t for t in _failed_logins.get(username, []) if t > cutoff]
+    fails = [t for t in _failed_logins.get(key, ()) if t > cutoff]
     if fails:
-        _failed_logins[username] = fails
+        _failed_logins[key] = fails
     else:
-        _failed_logins.pop(username, None)
-    return fails
+        _failed_logins.pop(key, None)
+    return len(fails)
+
+
+def _note_failure(*keys):
+    if len(_failed_logins) > 10000:
+        # Forget expired and small counts; never an entry that is blocking someone right now.
+        for key in list(_failed_logins):
+            if _recent_failures(key) < LOGIN_MAX_FAILURES:
+                _failed_logins.pop(key, None)
+    stamp = time.monotonic()
+    for key in keys:
+        _failed_logins.setdefault(key, []).append(stamp)
+
+
+def _login_keys(username):
+    ip = client_ip()
+    return {'pair': f'pair|{ip}|{username}', 'user': f'user|{username}', 'ip': f'ip|{ip}'}
+
+
+def _login_blocked(keys):
+    return (_recent_failures(keys['pair']) >= LOGIN_MAX_FAILURES
+            or _recent_failures(keys['user']) >= LOGIN_MAX_FAILURES_PER_USER
+            or _recent_failures(keys['ip']) >= LOGIN_MAX_FAILURES_PER_IP)
 
 
 @app.get('/api/auth/csrf')
@@ -560,22 +613,24 @@ def auth_csrf():
 def auth_login():
     body = json_body()
     username = str(body.get('username') or '').strip().lower()[:64]
-    password = str(body.get('password') or '')
-    if len(_recent_failures(username)) >= LOGIN_MAX_FAILURES:
+    password = str(body.get('password') or '')[:256]
+    # Limits per (address, name), per name and per address: one attacker cannot lock others out,
+    # and flooding with other names does not reset a block.
+    keys = _login_keys(username)
+    if _login_blocked(keys):
         raise ApiError(429, 'too_many_attempts')
     row = db().execute('SELECT * FROM [kullanicilar] WHERE [kullanici_adi]=?', (username,)).fetchone()
     # A hash is checked even for unknown names, so response time does not reveal which names exist.
     valid = check_password_hash(row['sifre_ozeti'] if row and row['sifre_ozeti'] else _dummy_hash, password)
     if not (row and valid and row['aktif']):
-        if len(_failed_logins) > 5000:
-            _failed_logins.clear()
-        _failed_logins.setdefault(username, []).append(time.monotonic())
+        _note_failure(*keys.values())
         raise ApiError(401, 'invalid_credentials')
-    _failed_logins.pop(username, None)
+    _failed_logins.pop(keys['pair'], None)
     session.clear()  # new session id-equivalent: nothing from before the login carries over
     session.permanent = True
     session['uid'] = row['id']
     session['sv'] = row['oturum_surumu']
+    session['iat'] = int(time.time())
     conn = db()
     with conn:
         conn.execute('UPDATE [kullanicilar] SET [son_giris]=? WHERE [id]=?', (now_iso(), row['id']))
@@ -603,12 +658,18 @@ def auth_change_password():
     if not user:
         raise ApiError(401, 'unauthorized')
     body = json_body()
-    current = str(body.get('currentPassword') or '')
+    current = str(body.get('currentPassword') or '')[:256]
     new = str(body.get('newPassword') or '')
+    # Someone holding a stolen session must not be able to try passwords here without limit.
+    guess_key = f"pw|{user['id']}"
+    if _recent_failures(guess_key) >= LOGIN_MAX_FAILURES:
+        raise ApiError(429, 'too_many_attempts')
     conn = db()
     row = conn.execute('SELECT * FROM [kullanicilar] WHERE [id]=?', (user['id'],)).fetchone()
     if not check_password_hash(row['sifre_ozeti'] or _dummy_hash, current):
+        _note_failure(guess_key)
         raise ApiError(400, 'wrong_password')
+    _failed_logins.pop(guess_key, None)
     if new == current:
         raise ApiError(400, 'password_same')
     check_password_policy(new, row['kullanici_adi'], row['ad'], row['soyad'])
@@ -767,47 +828,66 @@ def check_task_rules(conn, rid, body, row):
         raise ApiError(400, 'bad_assignee')
     old_status = row['durum'] if row else None
     new_status = body.get('status', old_status)
-    if 'status' in body and is_closed(new_status) and not is_closed(old_status):
-        screen_id = body['screenId'] if 'screenId' in body else (row['ekran_id'] if row else None)
-        if screen_id:
-            kinds = {r[0] for r in conn.execute('SELECT DISTINCT [tur] FROM [is_fotograflari] WHERE [is_id]=?', (rid,))}
-            if not {'once', 'sonra'} <= kinds:
-                raise ApiError(409, 'photos_required')
+    old_screen = row['ekran_id'] if row else None
+    new_screen = body['screenId'] if 'screenId' in body else old_screen
+    # Judged on the state after the change, so the rule cannot be dodged by closing first and linking
+    # the screen afterwards (or both in one request).
+    closing = is_closed(new_status) and not is_closed(old_status)
+    linking_closed = is_closed(new_status) and new_screen != old_screen
+    if new_screen and (closing or linking_closed):
+        kinds = {r[0] for r in conn.execute('SELECT DISTINCT [tur] FROM [is_fotograflari] WHERE [is_id]=?', (rid,))}
+        if not {'once', 'sonra'} <= kinds:
+            raise ApiError(409, 'photos_required')
     if row and 'dueDate' in body:
         stored = row['son_tarih']
         if stored and (body['dueDate'] or None) != stored and is_past(stored):
             raise ApiError(409, 'due_locked')
 
 
+MAX_MATERIAL_QTY = 100000
+MAX_HISTORY_PER_REQUEST = 1000
+
+
 def set_task_materials(conn, rid, items):
-    if not isinstance(items, list):
+    if not isinstance(items, list) or len(items) > 200:
         raise ApiError(400, 'bad_value')
-    conn.execute('DELETE FROM [is_malzemeleri] WHERE [is_id]=?', (rid,))
+    # Catalogue items, plus ones already on this job (still valid if later removed from the catalogue).
+    allowed = {r[0] for r in conn.execute('SELECT [id] FROM [malzemeler]')}
+    allowed |= {r[0] for r in conn.execute('SELECT [malzeme_id] FROM [is_malzemeleri] WHERE [is_id]=?', (rid,))}
+    rows = []
     for item in items:
         if not isinstance(item, dict):
             raise ApiError(400, 'bad_value')
-        conn.execute('INSERT INTO [is_malzemeleri] ([is_id],[malzeme_id],[miktar]) VALUES (?,?,?)',
-                     (rid, check_id(item.get('materialId')), to_db(item.get('qty'), 'num')))
+        material = check_id(item.get('materialId'))
+        qty = to_db(item.get('qty'), 'num')
+        if material not in allowed or qty is None or not 0 < qty <= MAX_MATERIAL_QTY:
+            raise ApiError(400, 'bad_value')
+        rows.append((rid, material, qty))
+    conn.execute('DELETE FROM [is_malzemeleri] WHERE [is_id]=?', (rid,))
+    conn.executemany('INSERT INTO [is_malzemeleri] ([is_id],[malzeme_id],[miktar]) VALUES (?,?,?)', rows)
 
 
 def append_task_history(conn, rid, entries):
     """History is append-only: entries already stored are kept as they are (with their author);
     new ones are stamped with the session user, whatever name the page sent."""
-    if not isinstance(entries, list):
+    if not isinstance(entries, list) or len(entries) > MAX_HISTORY_PER_REQUEST:
         raise ApiError(400, 'bad_value')
     known = {(r['zaman'] or '') + '|' + (r['notlar'] or '')
              for r in conn.execute('SELECT [zaman],[notlar] FROM [is_gecmisi] WHERE [is_id]=?', (rid,))}
     for h in entries:
         if not isinstance(h, dict):
             raise ApiError(400, 'bad_value')
-        ts = to_db(h.get('ts'), 'text') or now_iso()
+        ts = to_db(h.get('ts'), 'date') or now_iso()
         note = to_db(h.get('note'), 'memo')
+        status = h.get('status') or None
+        if status is not None and status not in TASK_STATUSES:
+            raise ApiError(400, 'bad_value')
         key = ts + '|' + (note or '')
         if key in known:
             continue
         known.add(key)
         conn.execute('INSERT INTO [is_gecmisi] ([is_id],[zaman],[durum],[notlar],[yazan]) VALUES (?,?,?,?,?)',
-                     (rid, ts, to_db(h.get('status'), 'text'), note, g.user['fullName']))
+                     (rid, ts, status, note, g.user['fullName']))
 
 
 def remove_upload(filename):
@@ -837,6 +917,10 @@ def collection_record(col, rid):
     row = conn.execute(f'SELECT * FROM [{table}] WHERE [id]=?', (rid,)).fetchone()
 
     if request.method == 'DELETE':
+        # A closed job's photos are its evidence (they cannot be deleted one by one), so only the
+        # system administrator may delete the whole job.
+        if col == 'tasks' and row and is_closed(row['durum']) and not g.user['isAdmin']:
+            raise ApiError(403, 'closed_task_delete')
         files = []
         with conn:
             if col == 'tasks':
@@ -921,12 +1005,17 @@ def photo_add(rid):
     conn = db()
     if not conn.execute('SELECT 1 FROM [isler] WHERE [id]=?', (rid,)).fetchone():
         raise ApiError(404, 'not_found')
+    if conn.execute('SELECT COUNT(*) FROM [is_fotograflari] WHERE [is_id]=?', (rid,)).fetchone()[0] >= MAX_PHOTOS_PER_TASK:
+        raise ApiError(409, 'too_many_photos')
     data = request.get_data(cache=False)
     if len(data) > MAX_PHOTO_BYTES:
         raise ApiError(413, 'too_large')
     ext = image_ext(data)
     if not ext:
         raise ApiError(415, 'bad_image')
+    # Keep room for the database: a full disk would stop every save, not just photos.
+    if storage_usage()[1] + os.path.getsize(DATABASE_PATH) + len(data) > DISK_GUARD_BYTES:
+        raise ApiError(507, 'disk_full')
     filename = f'p_{uuid.uuid4().hex}.{ext}'
     with open(os.path.join(UPLOAD_DIR, filename), 'xb') as fh:
         fh.write(data)
@@ -991,15 +1080,21 @@ def task_extend(rid):
     return jsonify(ok=True)
 
 
-@app.get('/api/stats/storage')
-@login_required
-def storage_stats():
+def storage_usage():
+    """(number of photo files, their total bytes)"""
     photo_count = photo_bytes = 0
     with os.scandir(UPLOAD_DIR) as entries:
         for e in entries:
             if e.is_file():
                 photo_count += 1
                 photo_bytes += e.stat().st_size
+    return photo_count, photo_bytes
+
+
+@app.get('/api/stats/storage')
+@login_required
+def storage_stats():
+    photo_count, photo_bytes = storage_usage()
     return jsonify(photoCount=photo_count, uploadBytes=photo_bytes, dbBytes=os.path.getsize(DATABASE_PATH),
                    quotaBytes=DISK_QUOTA_BYTES)
 
@@ -1266,11 +1361,27 @@ def run_notifications(base_url):
         _notify_lock.release()
 
 
+_local_base_url = ''
+
+
 def public_base_url():
+    """The site address for links in messages, never taken from a request's Host header on the server:
+    PUBLIC_URL if set; on PythonAnywhere https://<account>.<domain>; elsewhere (local trial) the first
+    address a signed-in user reached the site on."""
+    global _local_base_url
     configured = os.environ.get('PUBLIC_URL', '').strip().rstrip('/')
     if configured:
         return configured
-    return f"{'https' if app.config['SESSION_COOKIE_SECURE'] else request.scheme}://{request.host}"
+    pa_domain = os.environ.get('PYTHONANYWHERE_DOMAIN', '').strip()
+    if pa_domain:
+        account = os.environ.get('USER') or os.environ.get('LOGNAME') or ''
+        if not account:
+            import getpass
+            account = getpass.getuser()
+        return f'https://{account}.{pa_domain}'
+    if not _local_base_url and g.get('user') and re.fullmatch(r'[A-Za-z0-9.-]+(:\d{1,5})?', request.host):
+        _local_base_url = f'{request.scheme}://{request.host}'
+    return _local_base_url
 
 
 @app.after_request
