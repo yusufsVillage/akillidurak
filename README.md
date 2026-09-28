@@ -18,12 +18,12 @@ Aşağıda **KULLANICI** geçen her yere kendi PythonAnywhere kullanıcı adın�
 | `seed/` | İlk veri: 174 ekran (Excel listesinden; 84'ünün Bina ID ve DYS Onay No'su eski listeden) ve 48 malzeme. Yalnızca veritabanı ilk kez oluşturulurken yüklenir. SIM numaraları depoya konmadığı için boştur; uygulamada sonradan girilir |
 | `baslat.bat`, `yerel_baslat.py` | Kendi bilgisayarınızda çalıştırmak için (aşağıda). Zip'e girmez |
 | `requirements.txt` | Gerekli paketler (Flask), sabit sürümlerle |
-| `build_zip.py` | Yüklenecek zip'i hazırlar |
+| `build_zip.py` | GitHub kullanılmadan kurulum için yüklenecek zip'i hazırlar |
 | `yedek_windows_surumu/` | Eski Windows sürümü (run.bat ile çalışan). Zip'e girmez |
 
 ## Ortam değişkenleri
 
-Ayarlar koda veya zip'e yazılmaz; PythonAnywhere'deki WSGI dosyasında tanımlanır (aşağıda).
+Ayarlar koda, depoya veya zip'e yazılmaz; PythonAnywhere'deki WSGI dosyasında tanımlanır (aşağıda).
 
 | Değişken | Gerekli mi | Açıklama |
 | --- | --- | --- |
@@ -41,45 +41,55 @@ gösterilir. Şifreler en az 8 karakter olmalı, harf ve rakam içermeli; ad, so
 
 ## PythonAnywhere'e ilk kurulum
 
-1. **Zip'i hazırlayın** (kendi bilgisayarınızda, proje klasöründe):
+Kod PythonAnywhere'e GitHub'daki depodan çekilir. Ücretsiz hesaplar GitHub'a yalnızca HTTPS ile bağlanabilir ve
+depo özel olduğu için bir GitHub erişim anahtarı (token) gerekir. GitHub kullanmak istemezseniz aşağıdaki
+"Zip ile kurulum" bölümüne bakın.
 
-   ```bash
-   python build_zip.py
-   ```
+1. **GitHub erişim anahtarı oluşturun:** GitHub'da sağ üstteki profil resmi > **Settings** > **Developer settings**
+   > **Personal access tokens** > **Fine-grained tokens** > **Generate new token**:
+   - **Token name:** `pythonanywhere-durakops`
+   - **Expiration:** en fazla bir yıl (süre dolunca aşağıdaki "Erişim anahtarının süresi dolunca" bölümü)
+   - **Repository access:** *Only select repositories* > bu depo
+   - **Permissions** > **Repository permissions** > **Contents:** *Read-only*
 
-   `dist/durakops.zip` oluşur. Betik, zip'in içindekileri ve toplam boyutu listeler. Veritabanı, fotoğraflar,
-   sanal ortam ve eski Windows sürümü zip'e girmez.
+   **Generate token** ile oluşan anahtarı kopyalayın; yalnızca bir kez gösterilir. Anahtar salt okunur ve yalnızca
+   bu depoya erişebilir.
 
-2. **Yükleyin:** PythonAnywhere'de **Files** sekmesinde `/home/KULLANICI/` klasörüne girin ve **Upload a file**
-   ile `durakops.zip` dosyasını yükleyin.
-
-3. **Açın ve paketleri kurun:** **Consoles** sekmesinden bir **Bash** konsolu açın:
+2. **Kodu çekin ve paketleri kurun:** PythonAnywhere'de **Consoles** sekmesinden bir **Bash** konsolu açın.
+   `GITHUB_DEPO_ADRESI` yerine deponun GitHub sayfasındaki **Code > HTTPS** adresini yazın:
 
    ```bash
    cd ~
-   unzip -o durakops.zip
+   git config --global credential.helper store
+   git clone GITHUB_DEPO_ADRESI durakops
+   ```
+
+   `Username` sorulunca GitHub kullanıcı adınızı, `Password` sorulunca 1. adımdaki anahtarı yapıştırın (yazarken
+   görünmez). Anahtar `~/.git-credentials` dosyasında saklanır; güncellemelerde tekrar sorulmaz. Sonra:
+
+   ```bash
    mkdir -p ~/durakops-data
    mkvirtualenv --python=/usr/bin/python3.12 durakops-venv
    pip install -r ~/durakops/requirements.txt
    ```
 
    Kod `/home/KULLANICI/durakops/`, veri `/home/KULLANICI/durakops-data/` klasöründe durur. Python 3.12 yoksa
-   listedeki 3.10 veya üstü bir sürümü kullanın; 5. adımda da aynı sürümü seçin.
+   listedeki 3.10 veya üstü bir sürümü kullanın; 4. adımda da aynı sürümü seçin.
 
-4. **Gizli anahtar üretin** (aynı konsolda). Çıkan değeri 6. adımda kullanacaksınız:
+3. **Gizli anahtar üretin** (aynı konsolda). Çıkan değeri 5. adımda kullanacaksınız:
 
    ```bash
    python3 -c "import secrets; print(secrets.token_hex(32))"
    ```
 
-5. **Web uygulamasını oluşturun:** **Web** sekmesi > **Add a new web app** > **Next** > **Manual configuration**
+4. **Web uygulamasını oluşturun:** **Web** sekmesi > **Add a new web app** > **Next** > **Manual configuration**
    (Flask'ı değil, *Manual configuration*'ı seçin) > **Python 3.12** > **Next**. Açılan sayfada:
    - **Code > Source code:** `/home/KULLANICI/durakops`
    - **Code > Working directory:** `/home/KULLANICI/durakops`
    - **Virtualenv:** `/home/KULLANICI/.virtualenvs/durakops-venv`
    - **Security > Force HTTPS:** açık
 
-6. **WSGI dosyasını düzenleyin:** Aynı sayfada **Code > WSGI configuration file** bağlantısına tıklayın
+5. **WSGI dosyasını düzenleyin:** Aynı sayfada **Code > WSGI configuration file** bağlantısına tıklayın
    (`/var/www/KULLANICI_pythonanywhere_com_wsgi.py`). İçindekilerin tamamını silip şunu yazın; büyük harfli
    değerleri değiştirin:
 
@@ -87,7 +97,7 @@ gösterilir. Şifreler en az 8 karakter olmalı, harf ve rakam içermeli; ad, so
    import os
    import sys
 
-   os.environ['SECRET_KEY'] = '4. ADIMDA URETILEN DEGER'
+   os.environ['SECRET_KEY'] = '3. ADIMDA URETILEN DEGER'
    os.environ['ADMIN_USERNAME'] = 'yonetici.kullanici.adi'
    os.environ['ADMIN_PASSWORD'] = 'GECICI YONETICI SIFRESI'
    os.environ['SESSION_COOKIE_SECURE'] = '1'
@@ -100,9 +110,9 @@ gösterilir. Şifreler en az 8 karakter olmalı, harf ve rakam içermeli; ad, so
    from app import app as application  # noqa: E402
    ```
 
-   **Save** ile kaydedin. Bu dosya zip'in parçası değildir; güncellemelerde ezilmez.
+   **Save** ile kaydedin. Bu dosya depoda değildir; güncellemelerde ezilmez.
 
-7. **Başlatın:** **Web** sekmesinde yeşil **Reload** düğmesine basın.
+6. **Başlatın:** **Web** sekmesinde yeşil **Reload** düğmesine basın.
    - `https://KULLANICI.pythonanywhere.com/healthz` adresi `ok` yazmalı.
    - `https://KULLANICI.pythonanywhere.com/` adresinde `ADMIN_USERNAME` ve `ADMIN_PASSWORD` ile giriş yapın.
      Sistem yeni şifre belirlemenizi ister.
@@ -114,27 +124,42 @@ Sorun olursa **Web** sekmesindeki **Log files > Error log** dosyasına bakın. U
 
 ## Güncelleme
 
-1. Kendi bilgisayarınızda `python build_zip.py` ile yeni `dist/durakops.zip` dosyasını oluşturun.
-2. **Files** sekmesinde `/home/KULLANICI/` içine yükleyin (eskisinin üzerine yazın).
-3. Bash konsolunda:
+1. Bash konsolunda son sürümü GitHub'dan çekin:
 
    ```bash
-   cd ~
-   unzip -o durakops.zip
+   cd ~/durakops
+   git pull
    ```
 
-4. `requirements.txt` değiştiyse:
+2. `requirements.txt` değiştiyse:
 
    ```bash
    workon durakops-venv
    pip install -r ~/durakops/requirements.txt
    ```
 
-5. **Web** sekmesinde **Reload**.
+3. **Web** sekmesinde **Reload**.
 
-Veritabanı ve fotoğraflar `~/durakops-data/` klasöründedir ve zip'te yoktur; güncelleme onlara dokunmaz. Şema
+Veritabanı ve fotoğraflar `~/durakops-data/` klasöründedir ve depoda yoktur; güncelleme onlara dokunmaz. Şema
 değişiklikleri (yeni tablo veya sütun) açılışta otomatik uygulanır. Güncellemeden önce yedek almanız önerilir
-(aşağıda).
+(aşağıda). Sunucudaki kod dosyalarını elle değiştirmeyin; `git pull` bu durumda durur.
+
+### Erişim anahtarının süresi dolunca
+
+`git pull` giriş hatası verirse GitHub'da yeni bir anahtar oluşturun (1. adım), sonra Bash konsolunda eski kaydı
+silip çekmeyi tekrarlayın; kullanıcı adı ve yeni anahtar sorulur:
+
+```bash
+rm ~/.git-credentials
+cd ~/durakops && git pull
+```
+
+### Zip ile kurulum ve güncelleme (GitHub olmadan)
+
+Kendi bilgisayarınızda `python build_zip.py` ile `dist/durakops.zip` oluşturun (veritabanı, fotoğraflar, sanal
+ortam ve gizli değer içermez). **Files** sekmesinde `/home/KULLANICI/` içine yükleyip Bash konsolunda
+`cd ~ && unzip -o durakops.zip` çalıştırın; kod yine `~/durakops/` klasörüne açılır. İlk kurulumda 1. adımı ve
+`git` komutlarını atlayın, diğer adımlar aynıdır.
 
 ## Aylık yenileme (ücretsiz plan)
 
@@ -191,4 +216,5 @@ dosyasına çift tıklayın:
   kapatınca sunucu da kapanır.
 
 Yerel veritabanı, fotoğraflar ve oturum anahtarı `yerel_veri/` klasöründe durur. Bu klasör, `baslat.bat` ve
-`yerel_baslat.py` zip'e girmez; PythonAnywhere'deki veriden tamamen ayrıdır.
+`yerel_baslat.py` zip'e girmez. Yerel veri PythonAnywhere'deki veriden tamamen ayrıdır; `yerel_veri/` GitHub'a da
+gönderilmez.
