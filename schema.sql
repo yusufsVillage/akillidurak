@@ -56,7 +56,10 @@ CREATE TABLE IF NOT EXISTS [isler] (
   [olusturma] TEXT,
   [guncelleme] TEXT,
   [cozulme] TEXT,
-  [son_tarih] TEXT
+  [son_tarih] TEXT,
+  [is_no] INTEGER,           -- herkesin gördüğü iş numarası (#1, #2, …), sunucu verir
+  [hatirlatma_24] TEXT,      -- "24 saat kaldı" bildirimi hangi son tarih için gönderildi
+  [hatirlatma_doldu] TEXT    -- "süre doldu" bildirimi hangi son tarih için gönderildi
 );
 
 -- Bir işte kullanılan malzemeler ve miktarları.
@@ -124,6 +127,21 @@ CREATE TABLE IF NOT EXISTS [ayarlar] (
   [deger] TEXT
 );
 
+-- Telegram bildirim kuyruğu: olay işle birlikte yazılır, cevap gittikten sonra gönderilir; hata olursa
+-- yeniden denenir. olay = yeni | cozuldu | kapandi | yeniden_acildi | sure_24 | sure_doldu | uzatildi
+CREATE TABLE IF NOT EXISTS [bildirimler] (
+  [id] INTEGER PRIMARY KEY AUTOINCREMENT,
+  [olay] TEXT NOT NULL,
+  [is_id] TEXT,
+  [metin] TEXT NOT NULL,
+  [olusturma] TEXT,
+  [gonderim] TEXT,
+  [deneme] INTEGER NOT NULL DEFAULT 0,
+  [hata] TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS [ux_isler_no] ON [isler] ([is_no]);
+CREATE INDEX IF NOT EXISTS [ix_bildirimler_bekleyen] ON [bildirimler] ([gonderim], [id]);
 CREATE UNIQUE INDEX IF NOT EXISTS [ux_kullanicilar_adi] ON [kullanicilar] ([kullanici_adi]);
 CREATE INDEX IF NOT EXISTS [ix_isler_ekran] ON [isler] ([ekran_id]);
 CREATE INDEX IF NOT EXISTS [ix_isler_teknisyen] ON [isler] ([teknisyen_id]);

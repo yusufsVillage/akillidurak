@@ -33,6 +33,9 @@ Ayarlar koda, depoya veya zip'e yazılmaz; PythonAnywhere'deki WSGI dosyasında 
 | `SESSION_COOKIE_SECURE` | PythonAnywhere'de `1` | Oturum çerezi yalnızca HTTPS üzerinden gönderilir |
 | `DATABASE_PATH` | Önerilir | Veritabanı dosyası. Verilmezse kodun yanında `app.db` |
 | `UPLOAD_DIR` | Hayır | Fotoğraf klasörü. Verilmezse veritabanının yanında `uploads/` |
+| `TELEGRAM_BOT_TOKEN` | Hayır | Telegram bildirimleri için @BotFather'ın verdiği bot anahtarı. Gizlidir |
+| `TELEGRAM_CHAT_ID` | Hayır | Bildirimlerin gideceği Telegram grubunun kimliği (aşağıda nasıl bulunur) |
+| `PUBLIC_URL` | Hayır | Telegram mesajlarındaki bağlantılar için sitenin adresi; verilmezse gelen istekten alınır |
 
 Kullanıcı ekleme, düzenleme ve şifre sıfırlama yalnızca `ADMIN_USERNAME` hesabına açıktır; diğer kullanıcılar
 sistemin geri kalanını tam yetkiyle kullanır. Yeni kullanıcıya rastgele bir geçici şifre verilir ve yalnızca bir kez
@@ -102,6 +105,9 @@ depo özel olduğu için bir GitHub erişim anahtarı (token) gerekir. GitHub ku
    os.environ['ADMIN_PASSWORD'] = 'GECICI YONETICI SIFRESI'
    os.environ['SESSION_COOKIE_SECURE'] = '1'
    os.environ['DATABASE_PATH'] = '/home/KULLANICI/durakops-data/app.db'
+   # Telegram bildirimleri (isteğe bağlı, aşağıdaki "Telegram bildirimleri" bölümü):
+   # os.environ['TELEGRAM_BOT_TOKEN'] = 'BOTFATHER ANAHTARI'
+   # os.environ['TELEGRAM_CHAT_ID'] = 'GRUP KIMLIGI'
 
    project = '/home/KULLANICI/durakops'
    if project not in sys.path:
@@ -160,6 +166,30 @@ Kendi bilgisayarınızda `python build_zip.py` ile `dist/durakops.zip` oluşturu
 ortam ve gizli değer içermez). **Files** sekmesinde `/home/KULLANICI/` içine yükleyip Bash konsolunda
 `cd ~ && unzip -o durakops.zip` çalıştırın; kod yine `~/durakops/` klasörüne açılır. İlk kurulumda 1. adımı ve
 `git` komutlarını atlayın, diğer adımlar aynıdır.
+
+## Telegram bildirimleri
+
+Uygulama şu durumlarda bir Telegram grubuna mesaj gönderir: yeni iş, iş çözüldü, iş kapatıldı, iş yeniden açıldı,
+süreye 24 saat kaldı, süre doldu, süre uzatıldı. Her mesajda iş numarası (#12), durak adı ve işin bağlantısı vardır;
+içerik duruma göre değişir (teknisyen, son tarih, çözüm süresi, kullanılan malzemeler, mazeret…).
+
+1. **Bot oluşturun:** Telegram'da **@BotFather** ile konuşup `/newbot` yazın; bota bir ad (ör. Akıllı Durak Takip) ve
+   `bot` ile biten bir kullanıcı adı verin. BotFather'ın verdiği anahtarı (token) kopyalayın; kimseyle paylaşmayın.
+2. **Botu gruba ekleyin:** Ekibin Telegram grubuna botu üye olarak ekleyin ve grupta bir mesaj yazın (ör. `/start`).
+3. **Anahtarı yazın:** WSGI dosyasındaki `TELEGRAM_BOT_TOKEN` satırının başındaki `#` işaretini silip anahtarı yazın,
+   **Save** ve **Web** sekmesinde **Reload**.
+4. **Grup kimliğini bulun:** Uygulamada **Kullanıcılar** > **Telegram Bildirimleri** > **Grup kimliğini bul**. Grubun
+   kimliğini (eksi işaretiyle başlar) WSGI dosyasında `TELEGRAM_CHAT_ID` satırına yazın, **Save** ve **Reload**.
+5. **Deneyin:** Aynı yerde **Test mesajı gönder**. Son bildirimlerin gönderilip gönderilmediği de orada görünür.
+
+Nasıl çalışır:
+- Mesaj işle aynı anda kuyruğa yazılır ve sayfaya cevap gittikten sonra gönderilir; kimse Telegram'ı beklemez.
+  Telegram'a ulaşılamazsa 5 dakikada bir yeniden denenir (en fazla 5 kez; 2 günden eski mesajlar gönderilmez).
+- Süre hatırlatmaları 5 dakikada bir kontrol edilir, ancak yalnızca site istek aldığında (açık sayfa kendini
+  15 saniyede bir yeniler). Gece kimse sayfayı açık tutmuyorsa hatırlatma ilk istekle gider. Tam zamanında olması
+  için ücretsiz bir izleme servisiyle (ör. UptimeRobot) `https://KULLANICI.pythonanywhere.com/healthz` adresini
+  5 dakikada bir çağırabilirsiniz.
+- Ücretsiz PythonAnywhere hesapları Telegram'a (`api.telegram.org`, izin listesinde) kendi ara sunucusu üzerinden bağlanır.
 
 ## Aylık yenileme (ücretsiz plan)
 

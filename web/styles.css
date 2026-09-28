@@ -495,6 +495,10 @@ td.wrap-text{min-width:220px;white-space:normal;}
 .tab-btn{background:none;border:none;padding:9px 4px;font-size:13px;font-weight:600;color:var(--text-muted);cursor:pointer;border-bottom:2px solid transparent;margin-right:18px;}
 .tab-btn.active{color:var(--accent);border-color:var(--accent);}
 
+/* ===== Job number (#12) ===== */
+.task-no{font-family:var(--font-mono);font-weight:500;color:var(--text-muted);font-size:.92em;margin-right:2px;}
+.detail-title h2 .task-no{color:var(--accent);}
+
 /* ===== Links in tables and charts ===== */
 .link{color:var(--accent);text-decoration:none;cursor:pointer;}
 .link:hover{text-decoration:underline;}

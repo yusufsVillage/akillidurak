@@ -8,6 +8,7 @@ import datetime as dt
 import functools
 import hashlib
 import hmac
+import html
 import json
 import logging
 import math
@@ -15,7 +16,11 @@ import os
 import re
 import secrets
 import sqlite3
+import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
 from collections import namedtuple
 from urllib.parse import quote, urlsplit
@@ -187,8 +192,10 @@ COLLECTIONS = {
         # The job's technician: a user id (users are the technicians plus the system administrator).
         F('screenId', 'ekran_id'), F('assignedTechnicianId', 'teknisyen_id'), F('serviceDayType', 'servis_gunu'),
         F('description', 'aciklama', 'memo'), F('createdAt', 'olusturma'), F('updatedAt', 'guncelleme'),
-        F('resolvedAt', 'cozulme'), F('dueDate', 'son_tarih')]),
+        F('resolvedAt', 'cozulme'), F('dueDate', 'son_tarih'), F('no', 'is_no', 'int')]),
 }
+# Given by the server, never taken from the page.
+READONLY_FIELDS = {'no'}
 
 
 def to_db(value, kind):
@@ -222,6 +229,8 @@ def from_db(value, kind):
         return None
     if kind == 'num':
         return float(value)
+    if kind == 'int':
+        return int(value)
     return str(value)
 
 
@@ -257,7 +266,9 @@ def json_list_response(data):
 def sync_schema(conn):
     """Runs schema.sql (all IF NOT EXISTS) and adds columns that were added to a table later."""
     with open(SCHEMA_PATH, encoding='utf-8') as fh:
-        lines = [ln for ln in fh.read().splitlines() if not ln.strip().startswith('--')]
+        # Drop comments, whole-line and trailing ones (the schema has no "--" inside strings).
+        lines = [ln.split('--', 1)[0].rstrip() for ln in fh.read().splitlines()]
+        lines = [ln for ln in lines if ln.strip()]
     for stmt in '\n'.join(lines).split(';'):
         stmt = stmt.strip()
         if not stmt:
@@ -282,6 +293,7 @@ def sync_schema(conn):
 
 def insert_record(conn, name, rid, body):
     table, fields = COLLECTIONS[name]
+    fields = [f for f in fields if f.js not in READONLY_FIELDS]
     cols = ', '.join(f'[{f.col}]' for f in fields)
     marks = ', '.join('?' for _ in fields)
     values = [to_db(body.get(f.js), f.kind) for f in fields]
@@ -360,6 +372,17 @@ def migrate_technicians(conn):
             log.info('eski teknisyen atamasi kullaniciya baglandi: %s', row['tid'])
 
 
+def number_tasks(conn):
+    """Jobs from before job numbers existed get the next numbers, oldest first."""
+    rows = conn.execute('SELECT [id] FROM [isler] WHERE [is_no] IS NULL ORDER BY [olusturma], rowid').fetchall()
+    if not rows:
+        return
+    start = conn.execute('SELECT COALESCE(MAX([is_no]), 0) FROM [isler]').fetchone()[0]
+    for n, row in enumerate(rows, start + 1):
+        conn.execute('UPDATE [isler] SET [is_no]=? WHERE [id]=?', (n, row[0]))
+    log.info('is numarasi verildi: %s is', len(rows))
+
+
 def init_db():
     os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -374,6 +397,7 @@ def init_db():
             seed_once(conn)
             ensure_admin(conn)
             migrate_technicians(conn)
+            number_tasks(conn)
             conn.execute('COMMIT')
         except BaseException:
             conn.execute('ROLLBACK')
@@ -834,15 +858,19 @@ def collection_record(col, rid):
         with conn:
             insert_record(conn, col, rid, body)
             if col == 'tasks':
+                # Next job number, taken inside this write transaction so two new jobs cannot share it.
+                conn.execute('UPDATE [isler] SET [is_no]=(SELECT COALESCE(MAX([is_no]), 0) + 1 FROM [isler]) WHERE [id]=?', (rid,))
                 set_task_materials(conn, rid, body.get('usedMaterials') or [])
                 append_task_history(conn, rid, body.get('history') or [])
+                remember_near_due(conn, rid)
+                enqueue_notification(conn, 'yeni', rid, g.user['fullName'], public_base_url())
         return jsonify(ok=True)
 
     if not row:
         raise ApiError(404, 'not_found')
     if col == 'tasks':
         check_task_rules(conn, rid, body, row)
-    present = [f for f in fields if f.js in body]
+    present = [f for f in fields if f.js in body and f.js not in READONLY_FIELDS]
     values = [to_db(body[f.js], f.kind) for f in present]
     with conn:
         if present:
@@ -853,7 +881,23 @@ def collection_record(col, rid):
                 set_task_materials(conn, rid, body['usedMaterials'])
             if 'history' in body:
                 append_task_history(conn, rid, body['history'])
+            event = status_event(row['durum'], body.get('status', row['durum']))
+            if event:
+                enqueue_notification(conn, event, rid, g.user['fullName'], public_base_url())
     return jsonify(ok=True)
+
+
+def status_event(old, new):
+    """Which status change is announced: entering çözüldü or kapandı, or reopening a closed job."""
+    if new == old:
+        return None
+    if new == 'kapandi':
+        return 'kapandi'
+    if new == 'cozuldu' and not is_closed(old):
+        return 'cozuldu'
+    if is_closed(old) and not is_closed(new):
+        return 'yeniden_acildi'
+    return None
 
 
 # ---------------------------------------------------------------- task photos and deadline extensions
@@ -941,6 +985,9 @@ def task_extend(rid):
                      'VALUES (?,?,?,?,?,?)', (rid, stamp, stored, iso(new_due), reason, author))
         conn.execute('INSERT INTO [is_gecmisi] ([is_id],[zaman],[durum],[notlar],[yazan]) VALUES (?,?,?,?,?)',
                      (rid, stamp, None, to_db(body.get('note'), 'memo'), author))
+        remember_near_due(conn, rid)
+        enqueue_notification(conn, 'uzatildi', rid, author, public_base_url(),
+                             {'old': stored, 'new': iso(new_due), 'reason': reason})
     return jsonify(ok=True)
 
 
@@ -955,6 +1002,329 @@ def storage_stats():
                 photo_bytes += e.stat().st_size
     return jsonify(photoCount=photo_count, uploadBytes=photo_bytes, dbBytes=os.path.getsize(DATABASE_PATH),
                    quotaBytes=DISK_QUOTA_BYTES)
+
+
+# ---------------------------------------------------------------- Telegram notifications
+# Settings (env): TELEGRAM_BOT_TOKEN (from @BotFather) and TELEGRAM_CHAT_ID (the group that gets the messages);
+# optional PUBLIC_URL for the links in messages. An event is written to the bildirimler table in the same
+# transaction as the change, then sent after the response has gone out (Response.call_on_close), so nobody waits
+# for Telegram and nothing is lost when it is unreachable (retried every DEADLINE_CHECK_SECONDS). Deadline
+# reminders are checked at that pace too, as long as the site receives requests (the open page polls it).
+TELEGRAM_TIMEOUT = 8
+DEADLINE_CHECK_SECONDS = 300
+REMIND_BEFORE = dt.timedelta(hours=24)
+OVERDUE_NEWS_WINDOW = dt.timedelta(days=2)   # older overdue jobs are not announced (e.g. right after setup)
+MAX_SEND_ATTEMPTS = 5
+try:
+    from zoneinfo import ZoneInfo
+    LOCAL_TZ = ZoneInfo('Europe/Istanbul')
+except Exception:  # no time zone database (Windows without tzdata); Turkey is UTC+3 all year
+    LOCAL_TZ = dt.timezone(dt.timedelta(hours=3))
+
+TYPE_TEXT = {'ariza': ('🔧', 'Arıza'), 'icerik': ('🖼', 'İçerik'), 'genel': ('📋', 'Genel')}
+PRIORITY_TEXT = {'dusuk': '⚪ Düşük', 'orta': '🟡 Orta', 'yuksek': '🟠 Yüksek', 'acil': '🔴 Acil'}
+STATUS_TEXT = {'acik': 'Açık', 'atandi': 'Atandı', 'islemde': 'İşlemde', 'cozuldu': 'Çözüldü', 'kapandi': 'Kapandı'}
+
+
+class TelegramError(Exception):
+    pass
+
+
+_notify_lock = threading.Lock()
+_outbox_dirty = False
+_last_deadline_check = 0.0
+
+
+def telegram_configured():
+    return bool(os.environ.get('TELEGRAM_BOT_TOKEN', '').strip() and os.environ.get('TELEGRAM_CHAT_ID', '').strip())
+
+
+def telegram_api(method, params):
+    """One Bot API call; errors become TelegramError with the token masked."""
+    token = os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()
+    if not token:
+        raise TelegramError('TELEGRAM_BOT_TOKEN tanımlı değil')
+    req = urllib.request.Request(f'https://api.telegram.org/bot{token}/{method}', data=urllib.parse.urlencode(params).encode())
+
+    def call(opener):
+        with opener.open(req, timeout=TELEGRAM_TIMEOUT) as resp:
+            return json.loads(resp.read().decode('utf-8'))
+
+    try:
+        try:
+            body = call(urllib.request.build_opener())
+        except urllib.error.HTTPError:
+            raise
+        except urllib.error.URLError:
+            # PythonAnywhere free accounts reach the internet only through its proxy; use it if not set already.
+            if not os.environ.get('PYTHONANYWHERE_DOMAIN') or urllib.request.getproxies().get('https'):
+                raise
+            body = call(urllib.request.build_opener(urllib.request.ProxyHandler({'https': 'http://proxy.server:3128'})))
+    except urllib.error.HTTPError as e:
+        try:
+            body = json.loads(e.read().decode('utf-8'))
+        except Exception:
+            raise TelegramError(f'HTTP {e.code}') from None
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        raise TelegramError(str(getattr(e, 'reason', e)).replace(token, '***')) from None
+    if not body.get('ok'):
+        raise TelegramError(str(body.get('description') or 'bilinmeyen hata').replace(token, '***'))
+    return body.get('result')
+
+
+def local_time(value):
+    d = parse_iso(value) if isinstance(value, str) else value
+    return d.astimezone(LOCAL_TZ).strftime('%d.%m.%Y %H:%M') if d else '—'
+
+
+def span_text(seconds):
+    minutes = max(1, round(abs(seconds) / 60))
+    if minutes < 60:
+        return f'{minutes} dakika'
+    hours = round(minutes / 60)
+    if hours < 48:
+        return f'{hours} saat'
+    days, rest = divmod(hours, 24)
+    return f'{days} gün' + (f' {rest} saat' if rest else '')
+
+
+def _e(text):
+    return html.escape(str(text or ''), quote=False)
+
+
+def _short(text, limit=300):
+    text = ' '.join(str(text or '').split())
+    return text if len(text) <= limit else text[:limit - 1] + '…'
+
+
+def _qty(value):
+    number = float(value or 0)
+    return (f'{number:.2f}'.rstrip('0').rstrip('.') if number % 1 else str(int(number))).replace('.', ',')
+
+
+def build_message(conn, event, task_id, actor='', base_url='', extra=None):
+    """The Telegram text (HTML) for an event: job number, stop name, and what matters for that event."""
+    now = dt.datetime.now(dt.timezone.utc)
+    if event == 'test':
+        return (f'🔔 <b>Akıllı Durak Takip</b>\nTelegram bildirimleri çalışıyor.\n'
+                f'✍️ {_e(actor)} · {local_time(now)}')
+    t = conn.execute('SELECT * FROM [isler] WHERE [id]=?', (task_id,)).fetchone()
+    if not t:
+        return None
+    s = conn.execute('SELECT * FROM [ekranlar] WHERE [id]=?', (t['ekran_id'],)).fetchone() if t['ekran_id'] else None
+    u = conn.execute('SELECT [ad],[soyad] FROM [kullanicilar] WHERE [id]=?', (t['teknisyen_id'],)).fetchone() if t['teknisyen_id'] else None
+    tech = f"{u['ad'] or ''} {u['soyad'] or ''}".strip() if u else ''
+    no = f"#{t['is_no']}" if t['is_no'] else ''
+    due = parse_iso(t['son_tarih'])
+    extra = extra or {}
+    heads = {
+        'yeni': f'🆕 <b>Yeni iş {no}</b>',
+        'cozuldu': f'✅ <b>İş {no} çözüldü</b>',
+        'kapandi': f'🔒 <b>İş {no} kapatıldı</b>',
+        'yeniden_acildi': f'↩️ <b>İş {no} yeniden açıldı</b>',
+        'sure_24': f'⏳ <b>İş {no}: süre dolmak üzere</b>',
+        'sure_doldu': f'⚠️ <b>İş {no}: süre doldu</b>',
+        'uzatildi': f'🗓 <b>İş {no}: süre uzatıldı</b>',
+    }
+    lines = [heads[event]]
+    if s:
+        code = f"#{s['durak_no']}{'-' + s['yon'] if s['yon'] else ''}" if s['durak_no'] else ''
+        tail = ' · '.join(x for x in (code, s['bolge_kod']) if x)
+        lines.append(f"📍 <b>{_e(s['durak_adi'] or s['adres'] or 'İsimsiz durak')}</b>" + (f' · {_e(tail)}' if tail else ''))
+    else:
+        lines.append('📍 Ekran seçilmedi')
+    icon, type_name = TYPE_TEXT.get(t['tur'], ('📋', t['tur'] or '—'))
+    lines.append(f"{icon} {_e(t['baslik'])}")
+    who = f'👷 {_e(tech)}' if tech else '👷 Teknisyen atanmadı'
+    state_line = f"📌 Durum: {STATUS_TEXT.get(t['durum'], t['durum'] or '—')} · {who}"
+
+    if event == 'yeni':
+        lines.append(f"Tür: {type_name} · Öncelik: {PRIORITY_TEXT.get(t['oncelik'], t['oncelik'] or '—')}")
+        lines.append(who)
+        if due:
+            left = (due - now).total_seconds()
+            lines.append(f"⏰ Son tarih: {local_time(due)} ({span_text(left)} {'kaldı' if left > 0 else 'gecikti'})")
+        if t['aciklama']:
+            lines.append(f"📝 {_e(_short(t['aciklama']))}")
+        lines.append(f'✍️ Açan: {_e(actor)}')
+    elif event in ('cozuldu', 'kapandi'):
+        created, resolved = parse_iso(t['olusturma']), parse_iso(t['cozulme']) or now
+        lines.append(who + (f' · ⏱ Çözüm süresi: {span_text((resolved - created).total_seconds())}' if created else ''))
+        mats = conn.execute('SELECT m.[ad], m.[birim], im.[miktar] FROM [is_malzemeleri] AS im '
+                            'LEFT JOIN [malzemeler] AS m ON m.[id] = im.[malzeme_id] WHERE im.[is_id]=? ORDER BY im.[id]',
+                            (task_id,)).fetchall()
+        if mats:
+            used = ', '.join(f"{m['ad'] or 'Bilinmeyen'} ×{_qty(m['miktar'])}" + (f" {m['birim']}" if m['birim'] and m['birim'] != 'Adet' else '')
+                             for m in mats)
+            lines.append(f'🧰 Kullanılan: {_e(_short(used))}')
+        lines.append(f"✍️ {'Çözen' if event == 'cozuldu' else 'Kapatan'}: {_e(actor)}")
+    elif event == 'yeniden_acildi':
+        lines.append(state_line)
+        lines.append(f'✍️ Açan: {_e(actor)}')
+    elif event == 'sure_24' and due:
+        lines.append(f'⏰ Son tarih: {local_time(due)} — <b>{span_text((due - now).total_seconds())} kaldı</b>')
+        lines.append(state_line)
+    elif event == 'sure_doldu' and due:
+        lines.append(f'⏰ Son tarih: {local_time(due)} — <b>{span_text((now - due).total_seconds())} gecikti</b>')
+        lines.append(state_line)
+        lines.append('Süreyi uzatmak için uygulamada mazeret girilmeli.')
+    elif event == 'uzatildi':
+        lines.append(f"⏰ {local_time(extra.get('old'))} → <b>{local_time(extra.get('new'))}</b>")
+        if extra.get('reason'):
+            lines.append(f"💬 Mazeret: {_e(_short(extra['reason']))}")
+        lines.append(f'✍️ Uzatan: {_e(actor)}')
+    if base_url:
+        lines.append(f'🔗 {_e(base_url)}/#task-{_e(task_id)}')
+    return '\n'.join(lines)
+
+
+def enqueue_notification(conn, event, task_id, actor='', base_url='', extra=None):
+    """Adds a message to the queue inside the caller's transaction; nothing happens when Telegram is not set up."""
+    global _outbox_dirty
+    if not telegram_configured():
+        return
+    text = build_message(conn, event, task_id, actor, base_url, extra)
+    if text:
+        conn.execute('INSERT INTO [bildirimler] ([olay],[is_id],[metin],[olusturma]) VALUES (?,?,?,?)',
+                     (event, task_id, text, now_iso()))
+        _outbox_dirty = True
+
+
+def remember_near_due(conn, task_id):
+    """A job created or extended with less than 24 hours left already says so; skip the separate reminder."""
+    row = conn.execute('SELECT [son_tarih] FROM [isler] WHERE [id]=?', (task_id,)).fetchone()
+    due = parse_iso(row['son_tarih']) if row else None
+    if due and due - dt.datetime.now(dt.timezone.utc) <= REMIND_BEFORE:
+        conn.execute('UPDATE [isler] SET [hatirlatma_24]=? WHERE [id]=?', (row['son_tarih'], task_id))
+
+
+def check_deadlines(conn, base_url):
+    """Queues "24 saat kaldı" and "süre doldu" once per deadline (a new deadline after an extension counts again)."""
+    now = dt.datetime.now(dt.timezone.utc)
+    rows = conn.execute("SELECT [id],[son_tarih],[hatirlatma_24],[hatirlatma_doldu] FROM [isler] "
+                        "WHERE [son_tarih] IS NOT NULL AND [durum] NOT IN ('cozuldu','kapandi')").fetchall()
+    for r in rows:
+        due = parse_iso(r['son_tarih'])
+        if not due:
+            continue
+        if due <= now:
+            if r['hatirlatma_doldu'] != r['son_tarih']:
+                if now - due <= OVERDUE_NEWS_WINDOW:
+                    enqueue_notification(conn, 'sure_doldu', r['id'], base_url=base_url)
+                conn.execute('UPDATE [isler] SET [hatirlatma_doldu]=?, [hatirlatma_24]=? WHERE [id]=?',
+                             (r['son_tarih'], r['son_tarih'], r['id']))
+        elif due - now <= REMIND_BEFORE and r['hatirlatma_24'] != r['son_tarih']:
+            enqueue_notification(conn, 'sure_24', r['id'], base_url=base_url)
+            conn.execute('UPDATE [isler] SET [hatirlatma_24]=? WHERE [id]=?', (r['son_tarih'], r['id']))
+
+
+def flush_notifications(conn, limit=10):
+    chat = os.environ.get('TELEGRAM_CHAT_ID', '').strip()
+    now = dt.datetime.now(dt.timezone.utc)
+    rows = conn.execute('SELECT [id],[metin],[olusturma] FROM [bildirimler] WHERE [gonderim] IS NULL AND [deneme] < ? '
+                        'ORDER BY [id] LIMIT ?', (MAX_SEND_ATTEMPTS, limit)).fetchall()
+    for r in rows:
+        created = parse_iso(r['olusturma'])
+        if created and now - created > OVERDUE_NEWS_WINDOW:
+            with conn:
+                conn.execute('UPDATE [bildirimler] SET [deneme]=?, [hata]=? WHERE [id]=?',
+                             (MAX_SEND_ATTEMPTS, '2 günden eski, gönderilmedi', r['id']))
+            continue
+        try:
+            telegram_api('sendMessage', {'chat_id': chat, 'text': r['metin'], 'parse_mode': 'HTML',
+                                         'disable_web_page_preview': 'true'})
+        except TelegramError as e:
+            with conn:
+                conn.execute('UPDATE [bildirimler] SET [deneme]=[deneme]+1, [hata]=? WHERE [id]=?', (str(e)[:300], r['id']))
+            log.warning('telegram gonderilemedi (%s): %s', r['id'], e)
+            break  # usually the same for the rest (network, settings); retried on the next round
+        with conn:
+            conn.execute('UPDATE [bildirimler] SET [gonderim]=?, [hata]=NULL WHERE [id]=?', (now_iso(), r['id']))
+    with conn:
+        conn.execute('DELETE FROM [bildirimler] WHERE [olusturma] < ?', (iso(now - dt.timedelta(days=30)),))
+
+
+def run_notifications(base_url):
+    """Deadline check (at most every DEADLINE_CHECK_SECONDS) and sending; runs after a response, own connection."""
+    global _outbox_dirty, _last_deadline_check
+    if not _notify_lock.acquire(blocking=False):
+        return
+    try:
+        _outbox_dirty = False
+        conn = connect()
+        try:
+            if time.monotonic() - _last_deadline_check >= DEADLINE_CHECK_SECONDS:
+                _last_deadline_check = time.monotonic()
+                with conn:
+                    check_deadlines(conn, base_url)
+            flush_notifications(conn)
+        finally:
+            conn.close()
+    except Exception:
+        log.exception('bildirim hatasi')
+    finally:
+        _notify_lock.release()
+
+
+def public_base_url():
+    configured = os.environ.get('PUBLIC_URL', '').strip().rstrip('/')
+    if configured:
+        return configured
+    return f"{'https' if app.config['SESSION_COOKIE_SECURE'] else request.scheme}://{request.host}"
+
+
+@app.after_request
+def _schedule_notifications(resp):
+    if telegram_configured() and (_outbox_dirty or time.monotonic() - _last_deadline_check >= DEADLINE_CHECK_SECONDS):
+        base = public_base_url()
+        resp.call_on_close(lambda: run_notifications(base))
+    return resp
+
+
+@app.get('/api/telegram/status')
+@admin_required
+def telegram_status():
+    rows = db().execute('SELECT b.[id], b.[olay], b.[olusturma], b.[gonderim], b.[deneme], b.[hata], i.[is_no] '
+                        'FROM [bildirimler] AS b LEFT JOIN [isler] AS i ON i.[id] = b.[is_id] ORDER BY b.[id] DESC LIMIT 15').fetchall()
+    return jsonify(
+        tokenSet=bool(os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()),
+        chatSet=bool(os.environ.get('TELEGRAM_CHAT_ID', '').strip()),
+        recent=[{'id': r['id'], 'event': r['olay'], 'taskNo': r['is_no'], 'createdAt': r['olusturma'],
+                 'sentAt': r['gonderim'], 'attempts': r['deneme'], 'error': r['hata'],
+                 'gaveUp': r['gonderim'] is None and r['deneme'] >= MAX_SEND_ATTEMPTS} for r in rows])
+
+
+@app.post('/api/telegram/test')
+@admin_required
+def telegram_test():
+    if not telegram_configured():
+        raise ApiError(400, 'telegram_not_configured')
+    try:
+        telegram_api('sendMessage', {'chat_id': os.environ['TELEGRAM_CHAT_ID'].strip(), 'parse_mode': 'HTML',
+                                     'text': build_message(db(), 'test', None, g.user['fullName'])})
+    except TelegramError as e:
+        return jsonify(ok=False, error=str(e)), 502
+    return jsonify(ok=True)
+
+
+@app.get('/api/telegram/chats')
+@admin_required
+def telegram_chats():
+    """Chats the bot has seen lately (getUpdates), so the administrator can find the group's chat id."""
+    if not os.environ.get('TELEGRAM_BOT_TOKEN', '').strip():
+        raise ApiError(400, 'telegram_no_token')
+    try:
+        updates = telegram_api('getUpdates', {'timeout': 0, 'allowed_updates': json.dumps(['message', 'my_chat_member', 'channel_post'])})
+    except TelegramError as e:
+        return jsonify(ok=False, error=str(e)), 502
+    chats = {}
+    for update in updates or []:
+        for key in ('message', 'edited_message', 'my_chat_member', 'channel_post'):
+            chat = (update.get(key) or {}).get('chat')
+            if chat:
+                name = chat.get('title') or ' '.join(filter(None, [chat.get('first_name'), chat.get('last_name')])) or chat.get('username') or ''
+                chats[chat['id']] = {'id': str(chat['id']), 'title': name, 'type': chat.get('type')}
+    return jsonify(ok=True, chats=list(chats.values()), current=os.environ.get('TELEGRAM_CHAT_ID', '').strip())
 
 
 # ---------------------------------------------------------------- pages and files

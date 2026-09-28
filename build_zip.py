@@ -2,8 +2,8 @@
 
 Zip'in içinde her şey durakops/ klasörü altındadır; sunucuda `unzip -o durakops.zip` ile ~/durakops/ açılır.
 Veritabanı, fotoğraflar, sanal ortam, yedekler ve Windows'a özel dosyalar zip'e girmez; böylece güncelleme
-zip'i sunucudaki veriyi ezmez. .py dosyalarında elle yazılmış bir SECRET_KEY / ADMIN_PASSWORD bulunursa
-zip hazırlanmaz.
+zip'i sunucudaki veriyi ezmez. .py dosyalarında elle yazılmış bir SECRET_KEY / ADMIN_PASSWORD /
+TELEGRAM_BOT_TOKEN bulunursa zip hazırlanmaz.
 """
 import fnmatch
 import pathlib
@@ -24,8 +24,8 @@ SKIP_FILES = [
     '.env', '.env.*', '*.log', '*.zip', '*.swp', '*~', '.DS_Store', 'Thumbs.db', 'desktop.ini',
     '*.ps1', '*.bat', '*.cmd', '*wsgi*.py', '*.pem', '*.key', 'yerel_baslat.py', '.gitignore', '.gitattributes',
 ]
-# A literal value given to SECRET_KEY / ADMIN_PASSWORD: X = '...', ['X'] = '...', {'X': '...'}
-SECRET_RE = re.compile(r'''(SECRET_KEY|ADMIN_PASSWORD)['"]?\]?\s*[:=]\s*['"][^'"]+['"]''')
+# A literal value given to SECRET_KEY / ADMIN_PASSWORD / TELEGRAM_BOT_TOKEN: X = '...', ['X'] = '...', {'X': '...'}
+SECRET_RE = re.compile(r'''(SECRET_KEY|ADMIN_PASSWORD|TELEGRAM_BOT_TOKEN)['"]?\]?\s*[:=]\s*['"][^'"]+['"]''')
 
 
 def included(path):

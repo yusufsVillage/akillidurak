@@ -41,6 +41,9 @@ function humanDuration(ms) {
 }
 
 function isClosedStatus(s) { return s === 'cozuldu' || s === 'kapandi'; }
+// Job number given by the server (#1, #2, …); the same number is used in Telegram messages.
+function taskNo(t) { return t && t.no ? '#' + t.no : ''; }
+function taskNoHtml(t) { return t && t.no ? `<span class="task-no">#${t.no}</span> ` : ''; }
 function dueState(t) {
   if (!t.dueDate || isClosedStatus(t.status)) return null;
   const diff = new Date(t.dueDate) - Date.now();
@@ -83,6 +86,8 @@ const API_ERRORS = {
   exists: 'Bu kayıt zaten var.',
   bad_value: 'Geçersiz bir değer girildi.',
   bad_assignee: 'Seçilen teknisyen bulunamadı; sayfayı yenileyip tekrar deneyin.',
+  telegram_not_configured: 'Telegram ayarları eksik: WSGI dosyasına TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID yazılıp Reload edilmeli.',
+  telegram_no_token: 'Önce WSGI dosyasına TELEGRAM_BOT_TOKEN yazılıp Reload edilmeli.',
   too_long: 'Girilen metin çok uzun.',
   server_error: 'Sunucu hatası oluştu; lütfen tekrar deneyin.',
   username_taken: 'Bu kullanıcı adı zaten kullanılıyor.',
@@ -94,6 +99,7 @@ const API_ERRORS = {
   decode: 'Fotoğraf açılamadı; JPEG veya PNG kullanın.',
 };
 function apiErrorText(e, fallback) { return API_ERRORS[e && e.message] || fallback || 'İşlem başarısız'; }
+function parseJsonOrNull(text) { try { return JSON.parse(text); } catch (e) { return null; } }
 
 /* ======================= State & DB ======================= */
 let db = null;
@@ -412,7 +418,7 @@ function renderPanelPage(app, topbarActions) {
   const topStops = Object.entries(faultCounts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([screenId, count]) => ({ id: screenId, name: screenLabel(screenById(screenId)), count }));
 
   const recentActivity = [];
-  state.tasks.forEach(t => (t.history || []).forEach(h => recentActivity.push({ ...h, taskId: t.id, taskTitle: t.title })));
+  state.tasks.forEach(t => (t.history || []).forEach(h => recentActivity.push({ ...h, taskId: t.id, taskTitle: [taskNo(t), t.title].filter(Boolean).join(' ') })));
   recentActivity.sort((a, b) => new Date(b.ts) - new Date(a.ts));
   const recent = recentActivity.slice(0, 8);
   const maxFault = Math.max(...topStops.map(x => x.count), 1);
@@ -480,9 +486,9 @@ function filteredTasks() {
     if (taskFilters.technicianId && t.assignedTechnicianId !== taskFilters.technicianId) return false;
     if (taskFilters.due && dueState(t)?.kind !== taskFilters.due) return false;
     if (taskFilters.q) {
-      const q = taskFilters.q.toLowerCase();
+      const q = taskFilters.q.trim().toLocaleLowerCase('tr');
       const scr = screenById(t.screenId);
-      const hay = [t.title, t.description, scr?.durakAdi, scr?.adres, scr?.durakNo].filter(Boolean).join(' ').toLowerCase();
+      const hay = [taskNo(t), t.no, t.title, t.description, scr?.durakAdi, scr?.adres, scr?.durakNo].filter(Boolean).join(' ').toLocaleLowerCase('tr');
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -494,7 +500,7 @@ function renderTasksPage(app, topbarActions) {
   const list = filteredTasks();
   const content = `
     <div class="filter-bar">
-      <input type="search" id="taskSearchInput" class="search-input" placeholder="Ara: başlık veya açıklama…" data-filter="q" value="${esc(taskFilters.q)}">
+      <input type="search" id="taskSearchInput" class="search-input" placeholder="Ara: iş no, başlık, açıklama, durak…" data-filter="q" value="${esc(taskFilters.q)}">
       <select data-filter="type"><option value="">Tüm Türler</option>${optionsHtml(TASK_TYPES, taskFilters.type)}</select>
       <select data-filter="status"><option value="">Tüm Durumlar</option>${optionsHtml(STATUS_LABELS, taskFilters.status)}</select>
       <select data-filter="priority"><option value="">Tüm Öncelikler</option>${optionsHtml(PRIORITY_LABELS, taskFilters.priority)}</select>
@@ -514,10 +520,11 @@ function renderTasksPage(app, topbarActions) {
 
 function tasksTableHtml(list) {
   return `<div class="table-wrap"><table>
-    <thead><tr><th>Başlık</th><th>Tür</th><th>Ekran</th><th>Öncelik</th><th>Durum</th><th>Son Tarih</th><th>Teknisyen</th><th>Oluşturma</th></tr></thead>
+    <thead><tr><th>No</th><th>Başlık</th><th>Tür</th><th>Ekran</th><th>Öncelik</th><th>Durum</th><th>Son Tarih</th><th>Teknisyen</th><th>Oluşturma</th></tr></thead>
     <tbody>
       ${list.map(t => `
         <tr class="clickable" data-action="openTask" data-id="${t.id}">
+          <td class="mono nowrap">${esc(taskNo(t) || '—')}</td>
           <td>${esc(t.title)}</td>
           <td>${typePill(t.type)}</td>
           <td>${esc(screenLabel(screenById(t.screenId)))}</td>
@@ -539,7 +546,7 @@ function tasksKanbanHtml(list) {
         <div class="kanban-cards">
           ${items.map(t => `
             <div class="kanban-card" draggable="true" data-id="${t.id}" data-action="openTask">
-              <div class="kanban-card-title">${esc(t.title)}</div>
+              <div class="kanban-card-title">${taskNoHtml(t)}${esc(t.title)}</div>
               <div class="kanban-card-meta">${typePill(t.type)} ${prioPill(t.priority)} ${dueState(t) ? duePill(t) : ''}</div>
               <div class="kanban-card-meta">${esc(screenLabel(screenById(t.screenId)))}</div>
             </div>`).join('')}
@@ -581,7 +588,7 @@ function renderTaskDetailPage(app, topbarActions, id) {
   const extensions = task.extensions || [];
 
   const content = `
-    <div class="breadcrumb"><a href="#tasks">İşler</a> / ${esc(task.title)}</div>
+    <div class="breadcrumb"><a href="#tasks">İşler</a> / ${esc([taskNo(task), task.title].filter(Boolean).join(' '))}</div>
     ${due?.kind === 'overdue' ? `<div class="banner banner-crit">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
       <span>Bu işin süresi doldu: son tarih ${esc(fmtDateTime(task.dueDate))} (${esc(due.text)}). Uzatmak için mazeret gerekir.</span>
@@ -589,7 +596,7 @@ function renderTaskDetailPage(app, topbarActions, id) {
     </div>` : ''}
     <div class="detail-header">
       <div class="detail-title">
-        <h2>${esc(task.title)}</h2>
+        <h2>${taskNoHtml(task)}${esc(task.title)}</h2>
         <div class="tag-row">${typePill(task.type)}${prioPill(task.priority)}${statusPill(task.status)}</div>
       </div>
       <div class="field" style="min-width:190px;margin-bottom:0;">
@@ -1018,7 +1025,13 @@ async function saveTaskForm(form) {
       createdAt: now, updatedAt: now, resolvedAt: null,
       dueDate: fromLocalInput(fd.get('dueDate')),
     };
-    try { await db.doc('tasks/' + id).set(doc); closeModal(); showToast('İş oluşturuldu'); location.hash = '#task-' + id; }
+    try {
+      await db.doc('tasks/' + id).set(doc);
+      closeModal();
+      const no = taskNo(state.tasks.find(t => t.id === id));
+      showToast(no ? `İş ${no} oluşturuldu` : 'İş oluşturuldu');
+      location.hash = '#task-' + id;
+    }
     catch (e) { showToast(apiErrorText(e, 'Oluşturulamadı'), 'error'); }
   }
 }
@@ -1580,7 +1593,7 @@ function renderScreenDetailPage(app, topbarActions, id) {
         <thead><tr><th>Tarih</th><th>İş</th><th>Tür</th><th>Durum</th><th>Teknisyen</th><th>Kullanılan Malzeme / İşlem</th><th>Çözülme</th><th>Süre</th></tr></thead>
         <tbody>${list.map(t => `<tr class="clickable" data-action="openTask" data-id="${t.id}">
           <td class="mono nowrap">${esc(fmtDate(t.createdAt))}</td>
-          <td>${esc(t.title)}</td>
+          <td>${taskNoHtml(t)}${esc(t.title)}</td>
           <td>${typePill(t.type)}</td>
           <td>${statusPill(t.status)}</td>
           <td>${esc(personName(t.assignedTechnicianId) || '—')}</td>
@@ -1711,8 +1724,88 @@ function renderUsersPage(app, topbarActions) {
           ${u.id === currentUser.id ? '' : `<button class="btn btn-ghost btn-sm" data-action="resetUserPassword" data-id="${u.id}">Şifreyi Sıfırla</button>`}
         </td>
       </tr>`).join('')}</tbody>
-    </table></div>`}`;
+    </table></div>`}
+    ${telegramCardHtml()}`;
   app.innerHTML = (dbAvailable ? '' : bannerNoDb()) + content;
+  loadTelegramInfo();
+}
+
+/* ======================= Telegram notifications (administrator) ======================= */
+// The bot token and group id live in the WSGI file (secrets stay out of the app); this card shows whether they are
+// set, sends a test message, finds the group's chat id, and lists the latest notifications.
+const TELEGRAM_EVENTS = { yeni: 'Yeni iş', cozuldu: 'Çözüldü', kapandi: 'Kapatıldı', yeniden_acildi: 'Yeniden açıldı', sure_24: '24 saat kaldı', sure_doldu: 'Süre doldu', uzatildi: 'Süre uzatıldı' };
+let telegramInfo = null;
+let telegramInfoAt = 0;
+function loadTelegramInfo(force) {
+  if (!force && Date.now() - telegramInfoAt < 30000) return;
+  telegramInfoAt = Date.now();
+  apiFetch('/api/telegram/status', { cache: 'no-store' })
+    .then(r => (r.ok ? r.json() : null))
+    .then(d => { if (d) { telegramInfo = d; if (currentRoute().name === 'users') render(); } })
+    .catch(() => {});
+}
+function telegramCardHtml() {
+  const info = telegramInfo;
+  const flag = (ok, yes, no) => `<span class="pill ${ok ? 'pill-good' : 'pill-warn'}">${ok ? yes : no}</span>`;
+  const ready = info && info.tokenSet && info.chatSet;
+  const status = n => n.sentAt ? '<span class="pill pill-good">Gönderildi</span>'
+    : n.gaveUp ? `<span class="pill pill-crit" title="${esc(n.error || '')}">Gönderilemedi</span>`
+    : n.attempts ? `<span class="pill pill-warn" title="${esc(n.error || '')}">Yeniden denenecek (${n.attempts})</span>`
+    : '<span class="pill pill-neutral">Sırada</span>';
+  return `<div class="section-card telegram-card">
+    <div class="section-head">
+      <h3>Telegram Bildirimleri</h3>
+      <div class="head-links">
+        <button class="btn btn-secondary btn-sm" data-action="telegramChats" ${info?.tokenSet ? '' : 'disabled'}>Grup kimliğini bul</button>
+        <button class="btn btn-primary btn-sm" data-action="telegramTest" ${ready ? '' : 'disabled'}>Test mesajı gönder</button>
+      </div>
+    </div>
+    ${!info ? '<p class="muted-text">Yükleniyor…</p>' : `
+      <div class="tag-row" style="margin-bottom:10px;">Bot anahtarı ${flag(info.tokenSet, 'tanımlı', 'tanımlı değil')} · Grup ${flag(info.chatSet, 'tanımlı', 'tanımlı değil')}</div>
+      <p class="hint" style="margin:0 0 12px;">Gönderilenler: yeni iş, çözüldü, kapatıldı, yeniden açıldı, süreye 24 saat kala, süre doldu, süre uzatıldı. Her mesajda iş numarası, durak adı ve işin bağlantısı olur. ${ready ? '' : 'Kurulum: README > Telegram bildirimleri (bot anahtarı ve grup kimliği PythonAnywhere WSGI dosyasına yazılır).'}</p>
+      ${info.recent.length ? `<div class="table-wrap"><table class="compact-table">
+        <thead><tr><th>Zaman</th><th>Olay</th><th>İş</th><th>Durum</th></tr></thead>
+        <tbody>${info.recent.map(n => `<tr>
+          <td class="mono nowrap">${esc(fmtDateTime(n.createdAt))}</td>
+          <td>${esc(TELEGRAM_EVENTS[n.event] || n.event)}</td>
+          <td class="mono">${n.taskNo ? '#' + n.taskNo : '—'}</td>
+          <td>${status(n)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>` : '<p class="muted-text">Henüz bildirim yok.</p>'}`}
+  </div>`;
+}
+async function telegramTest(button) {
+  button.setAttribute('aria-busy', 'true');
+  try {
+    const res = await apiFetch('/api/telegram/test', { method: 'POST' });
+    const text = await res.text();
+    const data = parseJsonOrNull(text);
+    if (res.ok && data?.ok) showToast('Test mesajı gönderildi; Telegram grubuna bakın');
+    else showToast(data?.error ? 'Telegram: ' + data.error : apiErrorText(new Error(text), 'Gönderilemedi'), 'error', 6000);
+  } catch (e) { showToast('Gönderilemedi', 'error'); }
+  finally { button.removeAttribute('aria-busy'); loadTelegramInfo(true); }
+}
+async function telegramChats(button) {
+  button.setAttribute('aria-busy', 'true');
+  try {
+    const res = await apiFetch('/api/telegram/chats', { cache: 'no-store' });
+    const text = await res.text();
+    const data = parseJsonOrNull(text);
+    if (!res.ok || !data?.ok) { showToast(data?.error ? 'Telegram: ' + data.error : apiErrorText(new Error(text), 'Sorgulanamadı'), 'error', 6000); return; }
+    openModal('Grup kimliğini bul', `
+      <p class="modal-lead">Botun son 24 saatte mesaj aldığı sohbetler. Grubunuz listede yoksa botu gruba ekleyip grupta bir mesaj yazın (ör. <span class="mono">/start</span>), sonra tekrar deneyin.</p>
+      ${data.chats.length ? `<div class="table-wrap"><table class="compact-table">
+        <thead><tr><th>Sohbet</th><th>Tür</th><th>Kimlik (TELEGRAM_CHAT_ID)</th></tr></thead>
+        <tbody>${data.chats.map(c => `<tr>
+          <td>${esc(c.title || '—')}${c.id === data.current ? ' <span class="pill pill-good">kullanılıyor</span>' : ''}</td>
+          <td>${esc({ group: 'Grup', supergroup: 'Grup', private: 'Kişi', channel: 'Kanal' }[c.type] || c.type || '')}</td>
+          <td class="mono">${esc(c.id)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>` : emptyStateHtml('Sohbet bulunamadı.')}
+      <div class="notice">Kimliği (grup kimlikleri eksi işaretiyle başlar) WSGI dosyasındaki <span class="mono">TELEGRAM_CHAT_ID</span> satırına yazıp Web sekmesinde Reload edin.</div>
+    `, '<button class="btn btn-primary" data-action="closeModal">Tamam</button>', { large: true });
+  } catch (e) { showToast('Sorgulanamadı', 'error'); }
+  finally { button.removeAttribute('aria-busy'); }
 }
 
 // "Ayşe Çelik" -> "ayse.celik", numbered if taken.
@@ -2036,7 +2129,7 @@ function materialReportTableHtml(rows) {
         <tbody>${[...r.uses].sort((a, b) => reportTaskSort(a.task, b.task)).map(u => `<tr>
           <td class="mono nowrap">${esc(fmtDate(reportDate(u.task) || u.task.createdAt))}</td>
           <td>${u.task.screenId ? `<a class="link" href="#screen-${esc(u.task.screenId)}" data-action="openScreen" data-id="${esc(u.task.screenId)}">${esc(screenLabel(screenById(u.task.screenId)))}</a>` : '—'}</td>
-          <td><a class="link" href="#task-${esc(u.task.id)}" data-action="openTask" data-id="${esc(u.task.id)}">${esc(u.task.title)}</a></td>
+          <td><a class="link" href="#task-${esc(u.task.id)}" data-action="openTask" data-id="${esc(u.task.id)}">${esc([taskNo(u.task), u.task.title].filter(Boolean).join(' '))}</a></td>
           <td>${statusPill(u.task.status)}</td>
           <td class="num">${fmtQty(u.qty)} ${esc(r.unit)}</td>
         </tr>`).join('')}</tbody>
@@ -2051,7 +2144,7 @@ function serviceReportTableHtml(tasks) {
     <tbody>${[...tasks].sort(reportTaskSort).map(t => `<tr class="clickable" data-action="openTask" data-id="${esc(t.id)}">
       <td class="mono nowrap">${esc(fmtDate(reportDate(t) || t.createdAt))}</td>
       <td>${t.screenId ? `<a class="link" href="#screen-${esc(t.screenId)}" data-action="openScreen" data-id="${esc(t.screenId)}">${esc(screenLabel(screenById(t.screenId)))}</a>` : '—'}</td>
-      <td>${esc(t.title)}</td>
+      <td>${taskNoHtml(t)}${esc(t.title)}</td>
       <td>${typePill(t.type)}</td>
       <td>${statusPill(t.status)}</td>
       <td>${esc(personName(t.assignedTechnicianId) || '—')}</td>
@@ -2199,11 +2292,11 @@ async function downloadCsv(filename, headers, rows) {
 }
 async function exportTasksCsv() {
   const tasks = filteredReportTasks();
-  const headers = ['ID', 'Başlık', 'Tür', 'Durum', 'Öncelik', 'Ekran', 'Şeflik', 'Teknisyen', 'Oluşturma', 'Son Tarih', 'Çözülme', 'Süre Uzatma', 'Önce Foto', 'Sonra Foto'];
+  const headers = ['İş No', 'Başlık', 'Tür', 'Durum', 'Öncelik', 'Ekran', 'Şeflik', 'Teknisyen', 'Oluşturma', 'Son Tarih', 'Çözülme', 'Süre Uzatma', 'Önce Foto', 'Sonra Foto'];
   const rows = tasks.map(t => {
     const scr = screenById(t.screenId);
     const photoCount = kind => (t.photos || []).filter(p => p.kind === kind).length;
-    return [t.id, t.title, TASK_TYPES[t.type] || t.type, STATUS_LABELS[t.status] || t.status, PRIORITY_LABELS[t.priority] || t.priority,
+    return [t.no ?? '', t.title, TASK_TYPES[t.type] || t.type, STATUS_LABELS[t.status] || t.status, PRIORITY_LABELS[t.priority] || t.priority,
       screenLabel(scr), scr?.bolgeKod || '', personName(t.assignedTechnicianId), fmtDateTime(t.createdAt),
       t.dueDate ? fmtDateTime(t.dueDate) : '', t.resolvedAt ? fmtDateTime(t.resolvedAt) : '', (t.extensions || []).length, photoCount('once'), photoCount('sonra')];
   });
@@ -2216,10 +2309,10 @@ function reportFileName(base) {
 }
 function taskCsvColumns(t) {
   const scr = screenById(t.screenId);
-  return [fmtDateTime(reportDate(t) || t.createdAt), scr ? (scr.durakAdi || scr.adres || '') : '', scr ? `${scr.durakNo || ''}${scr.yon ? '-' + scr.yon : ''}` : '',
+  return [t.no ?? '', fmtDateTime(reportDate(t) || t.createdAt), scr ? (scr.durakAdi || scr.adres || '') : '', scr ? `${scr.durakNo || ''}${scr.yon ? '-' + scr.yon : ''}` : '',
     scr?.bolgeKod || '', t.title, TASK_TYPES[t.type] || t.type, STATUS_LABELS[t.status] || t.status, personName(t.assignedTechnicianId)];
 }
-const TASK_CSV_HEADERS = ['Tarih', 'Ekran', 'Durak No', 'Şeflik', 'İş', 'Tür', 'Durum', 'Teknisyen'];
+const TASK_CSV_HEADERS = ['İş No', 'Tarih', 'Ekran', 'Durak No', 'Şeflik', 'İş', 'Tür', 'Durum', 'Teknisyen'];
 async function exportMaterialsReportCsv() {
   const rows = materialReport(filteredReportTasks()).map(r => [r.name, r.unit, fmtQty(r.qty), r.taskCount, r.screenCount, r.last ? fmtDate(r.last) : '']);
   await downloadCsv(reportFileName('malzeme-raporu'), ['Malzeme / İşlem', 'Birim', 'Toplam Miktar', 'Servis (İş) Sayısı', 'Ekran Sayısı', 'Son Kullanım'], rows);
@@ -2327,6 +2420,8 @@ const actions = {
   editUser(el) { openUserFormModal(el.dataset.id); },
   resetUserPassword(el) { resetUserPassword(el.dataset.id); },
   copyTempPassword(el) { copyTempPassword(el); },
+  telegramTest(el) { telegramTest(el); },
+  telegramChats(el) { telegramChats(el); },
   changePassword() { openChangePasswordModal(); },
   logout() { logout(); },
 };
