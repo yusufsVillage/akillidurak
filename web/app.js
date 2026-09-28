@@ -5,7 +5,7 @@ const STATUS_LABELS = { acik: 'Açık', atandi: 'Atandı', islemde: 'İşlemde',
 const PRIORITIES = ['dusuk', 'orta', 'yuksek', 'acil'];
 const PRIORITY_LABELS = { dusuk: 'Düşük', orta: 'Orta', yuksek: 'Yüksek', acil: 'Acil' };
 const SCREEN_STATUS_LABELS = { aktif: 'Aktif', arizali: 'Arızalı', bakimda: 'Bakımda', pasif: 'Pasif' };
-const ROUTE_TITLES = { panel: 'Panel', tasks: 'İşler', screens: 'Ekranlar', map: 'Harita', technicians: 'Teknisyenler', materials: 'Malzeme Kataloğu', reports: 'Raporlar', users: 'Kullanıcılar', taskDetail: 'İş Detayı', screenDetail: 'Ekran Geçmişi' };
+const ROUTE_TITLES = { panel: 'Panel', tasks: 'İşler', screens: 'Ekranlar', map: 'Harita', materials: 'Malzeme Kataloğu', reports: 'Raporlar', users: 'Kullanıcılar', taskDetail: 'İş Detayı', screenDetail: 'Ekran Geçmişi' };
 const ORG_TYPE_LABELS = { kurum: 'Kurum çalışanı', firma: 'Firma çalışanı' };
 const MIN_PASSWORD_LENGTH = 8;
 const POLL_MS = 15000;
@@ -82,6 +82,7 @@ const API_ERRORS = {
   csrf: 'Oturum doğrulanamadı; sayfayı yenileyip tekrar deneyin.',
   exists: 'Bu kayıt zaten var.',
   bad_value: 'Geçersiz bir değer girildi.',
+  bad_assignee: 'Seçilen teknisyen bulunamadı; sayfayı yenileyip tekrar deneyin.',
   too_long: 'Girilen metin çok uzun.',
   server_error: 'Sunucu hatası oluştu; lütfen tekrar deneyin.',
   username_taken: 'Bu kullanıcı adı zaten kullanılıyor.',
@@ -98,7 +99,8 @@ function apiErrorText(e, fallback) { return API_ERRORS[e && e.message] || fallba
 let db = null;
 let dbAvailable = false;
 let currentUser = null;
-const state = { screens: [], technicians: [], materials: [], tasks: [], users: [] };
+// people: every user's name, for assigning jobs (all users can read it); users: full records, administrator only.
+const state = { screens: [], people: [], materials: [], tasks: [], users: [] };
 
 // The server stamps authors from the session as well; this is only for the text the page composes.
 function getViewerName() { return currentUser?.fullName || 'Bilinmeyen Kullanıcı'; }
@@ -134,7 +136,21 @@ async function apiFetch(url, opts) {
 }
 
 function screenById(id) { return state.screens.find(s => s.id === id); }
-function techById(id) { return state.technicians.find(t => t.id === id); }
+// Jobs are assigned to users (the technicians and the system administrator).
+function personById(id) { return id ? state.people.find(p => p.id === id) : null; }
+function personName(id) { return personById(id)?.fullName || ''; }
+function comparePeople(a, b) { return a.fullName.localeCompare(b.fullName, 'tr'); }
+// Choices for a job's technician: active users, plus the current one even if deactivated since.
+function assigneeOptionsHtml(selectedId) {
+  const people = state.people.filter(p => p.active || p.id === selectedId).sort(comparePeople);
+  return '<option value="">Atanmadı</option>' + people.map(p =>
+    `<option value="${esc(p.id)}" ${p.id === selectedId ? 'selected' : ''}>${esc(p.fullName)}${p.isAdmin ? ' (yönetici)' : ''}${p.active ? '' : ' (pasif)'}</option>`).join('');
+}
+// Filters list everyone, so jobs of deactivated users can still be found.
+function peopleFilterOptionsHtml(selectedId) {
+  return [...state.people].sort(comparePeople).map(p =>
+    `<option value="${esc(p.id)}" ${p.id === selectedId ? 'selected' : ''}>${esc(p.fullName)}${p.active ? '' : ' (pasif)'}</option>`).join('');
+}
 function materialById(id) { return state.materials.find(m => m.id === id); }
 function toObj(d) { return { id: d.id, ...d.data() }; }
 function screenLabel(s) {
@@ -176,7 +192,9 @@ function createApiDb() {
     });
     if (!res.ok) throw new Error((await res.text()) || 'HTTP ' + res.status);
     const result = await res.json().catch(() => ({}));
-    await refresh(path.split('/')[0]);
+    const col = path.split('/')[0];
+    await refresh(col);
+    if (col === 'users') await refresh('people'); // names in the technician lists
     return result;
   }
   return {
@@ -208,7 +226,7 @@ function subscribeCollections() {
     render();
     if (col === 'tasks') refreshCompleteModal();
   }, onErr);
-  ['screens', 'technicians', 'materials', 'tasks'].forEach(sub);
+  ['screens', 'people', 'materials', 'tasks'].forEach(sub);
   if (currentUser?.isAdmin) sub('users');
 }
 
@@ -219,7 +237,7 @@ function currentRoute() {
   if (h.startsWith('screen-')) return { name: 'screenDetail', id: h.slice(7) };
   // #map shows every screen; #map-<screen id> opens the map on that screen.
   if (h === 'map' || h.startsWith('map-')) return { name: 'map', id: h.startsWith('map-') ? h.slice(4) : null };
-  if (['panel', 'tasks', 'screens', 'technicians', 'materials', 'reports', 'users'].includes(h)) return { name: h };
+  if (['panel', 'tasks', 'screens', 'materials', 'reports', 'users'].includes(h)) return { name: h };
   return { name: 'panel' };
 }
 const PARENT_NAV = { taskDetail: 'tasks', screenDetail: 'screens' };
@@ -250,7 +268,6 @@ function render() {
     case 'screens': renderScreensPage(appEl, topbarActions); break;
     case 'screenDetail': renderScreenDetailPage(appEl, topbarActions, route.id); break;
     case 'map': renderMapPage(appEl, topbarActions, route.id); break;
-    case 'technicians': renderTechniciansPage(appEl, topbarActions); break;
     case 'materials': renderMaterialsPage(appEl, topbarActions); break;
     case 'reports': renderReportsPage(appEl, topbarActions); break;
     case 'users': renderUsersPage(appEl, topbarActions); break;
@@ -482,7 +499,7 @@ function renderTasksPage(app, topbarActions) {
       <select data-filter="status"><option value="">Tüm Durumlar</option>${optionsHtml(STATUS_LABELS, taskFilters.status)}</select>
       <select data-filter="priority"><option value="">Tüm Öncelikler</option>${optionsHtml(PRIORITY_LABELS, taskFilters.priority)}</select>
       <select data-filter="bolge"><option value="">Tüm Şeflikler</option>${distinctBolgeler().map(b => `<option value="${esc(b)}" ${taskFilters.bolge === b ? 'selected' : ''}>${esc(b)}</option>`).join('')}</select>
-      <select data-filter="technicianId"><option value="">Tüm Teknisyenler</option>${state.technicians.map(t => `<option value="${t.id}" ${taskFilters.technicianId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>
+      <select data-filter="technicianId"><option value="">Tüm Teknisyenler</option>${peopleFilterOptionsHtml(taskFilters.technicianId)}</select>
       <select data-filter="due"><option value="">Tüm Süreler</option>${optionsHtml({ overdue: 'Süresi geçenler', soon: '24 saat içinde dolacaklar' }, taskFilters.due)}</select>
       <button class="btn btn-ghost btn-sm" data-action="clearTaskFilters">Filtreleri Temizle</button>
       <div class="view-toggle" style="margin-left:auto;">
@@ -507,7 +524,7 @@ function tasksTableHtml(list) {
           <td>${prioPill(t.priority)}</td>
           <td>${statusPill(t.status)}</td>
           <td class="nowrap">${duePill(t)}</td>
-          <td>${esc(techById(t.assignedTechnicianId)?.name || 'Atanmadı')}</td>
+          <td>${esc(personName(t.assignedTechnicianId) || 'Atanmadı')}</td>
           <td class="mono">${fmtDate(t.createdAt)}</td>
         </tr>`).join('')}
     </tbody>
@@ -592,7 +609,7 @@ function renderTaskDetailPage(app, topbarActions, id) {
       </div>
       <div class="detail-item">
         <div class="di-label">Teknisyen</div>
-        <select data-task-field="assignedTechnicianId" data-task-id="${task.id}"><option value="">Atanmadı</option>${state.technicians.map(t => `<option value="${t.id}" ${task.assignedTechnicianId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>
+        <select data-task-field="assignedTechnicianId" data-task-id="${task.id}">${assigneeOptionsHtml(task.assignedTechnicianId)}</select>
       </div>
       <div class="detail-item">
         <div class="di-label">Servis Günü</div>
@@ -738,7 +755,7 @@ async function handleTaskFieldChange(taskId, field, value) {
   else if (field === 'priority') { patch.priority = value; }
   else if (field === 'serviceDayType') { patch.serviceDayType = value || null; }
   try { await db.doc('tasks/' + taskId).update(patch); showToast('Kaydedildi'); }
-  catch (e) { showToast('Kaydedilemedi', 'error'); }
+  catch (e) { showToast(apiErrorText(e, 'Kaydedilemedi'), 'error'); render(); }
 }
 async function addHistoryNoteHandler(form) {
   const taskId = form.dataset.taskId;
@@ -953,7 +970,7 @@ function openTaskFormModal(taskId, preset = {}) {
       </div>
       <div class="field"><label>Ekran</label><select name="screenId"><option value="">—</option>${sortedScreens.map(s => `<option value="${s.id}" ${screenId === s.id ? 'selected' : ''}>${esc(screenLabel(s))}</option>`).join('')}</select></div>
       <div class="field-row">
-        <div class="field"><label>Teknisyen</label><select name="assignedTechnicianId"><option value="">Atanmadı</option>${state.technicians.map(t => `<option value="${t.id}" ${task?.assignedTechnicianId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></div>
+        <div class="field"><label>Teknisyen</label><select name="assignedTechnicianId">${assigneeOptionsHtml(task?.assignedTechnicianId)}</select></div>
         <div class="field"><label>Servis Günü</label><select name="serviceDayType"><option value="">—</option><option value="haftaici" ${task?.serviceDayType === 'haftaici' ? 'selected' : ''}>Hafta İçi</option><option value="haftasonu" ${task?.serviceDayType === 'haftasonu' ? 'selected' : ''}>Hafta Sonu</option></select></div>
       </div>
       <div class="field">
@@ -1002,7 +1019,7 @@ async function saveTaskForm(form) {
       dueDate: fromLocalInput(fd.get('dueDate')),
     };
     try { await db.doc('tasks/' + id).set(doc); closeModal(); showToast('İş oluşturuldu'); location.hash = '#task-' + id; }
-    catch (e) { showToast('Oluşturulamadı', 'error'); }
+    catch (e) { showToast(apiErrorText(e, 'Oluşturulamadı'), 'error'); }
   }
 }
 async function deleteTask(id) {
@@ -1531,7 +1548,7 @@ function renderScreenDetailPage(app, topbarActions, id) {
   const typeTabs = [['ariza', 'Arıza'], ['', 'Tümü'], ['icerik', 'İçerik'], ['genel', 'Genel']];
 
   const content = `
-    <div class="print-only print-head"><strong>Durak Ops — Ekran Geçmişi</strong><span>${esc(screenLabel(s))}</span><span>Oluşturma: ${esc(fmtDateTime(new Date().toISOString()))}</span></div>
+    <div class="print-only print-head"><strong>Akıllı Durak Takip — Ekran Geçmişi</strong><span>${esc(screenLabel(s))}</span><span>Oluşturma: ${esc(fmtDateTime(new Date().toISOString()))}</span></div>
     <div class="breadcrumb"><a href="#screens">Ekranlar</a> / ${esc(s.durakAdi || 'İsimsiz')}</div>
     <div class="detail-header">
       <div class="detail-title">
@@ -1566,7 +1583,7 @@ function renderScreenDetailPage(app, topbarActions, id) {
           <td>${esc(t.title)}</td>
           <td>${typePill(t.type)}</td>
           <td>${statusPill(t.status)}</td>
-          <td>${esc(techById(t.assignedTechnicianId)?.name || '—')}</td>
+          <td>${esc(personName(t.assignedTechnicianId) || '—')}</td>
           <td class="wrap-text">${esc(materialsSummary(t) || '—')}</td>
           <td class="mono nowrap">${t.resolvedAt ? esc(fmtDate(t.resolvedAt)) : '—'}</td>
           <td class="nowrap">${fmtDays(resolutionDays(t))}</td>
@@ -1602,64 +1619,6 @@ function renderScreenDetailPage(app, topbarActions, id) {
     const key = `${s.id}|${s.enlem}|${s.boylam}`;
     if (detailMapKey !== key) { detailMapKey = key; detailMap.setView(s.enlem, s.boylam, 16); }
   }
-}
-
-/* ======================= Technicians ======================= */
-function renderTechniciansPage(app, topbarActions) {
-  topbarActions.innerHTML = `<button class="btn btn-primary" data-action="newTech"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Yeni Teknisyen</button>`;
-  const techs = [...state.technicians].sort((a, b) => a.name.localeCompare(b.name, 'tr'));
-  let content;
-  if (!techs.length) {
-    content = emptyStateHtml('Henüz teknisyen eklenmedi. Sağ üstteki "Yeni Teknisyen" ile ekleyin.');
-  } else {
-    content = `<div class="table-wrap"><table>
-      <thead><tr><th>Ad Soyad</th><th>Telefon</th><th class="num">Açık İş</th><th>Durum</th><th></th></tr></thead>
-      <tbody>${techs.map(t => {
-        const openCount = state.tasks.filter(tk => tk.assignedTechnicianId === t.id && tk.status !== 'kapandi').length;
-        return `<tr>
-          <td>${esc(t.name)}</td>
-          <td class="mono">${esc(t.phone || '—')}</td>
-          <td class="num mono">${openCount}</td>
-          <td>${t.active !== false ? '<span class="pill pill-good">Aktif</span>' : '<span class="pill pill-neutral">Pasif</span>'}</td>
-          <td class="row-actions">
-            <button class="btn btn-ghost btn-sm" data-action="editTech" data-id="${t.id}">Düzenle</button>
-            <button class="btn btn-ghost btn-sm" data-action="deleteTech" data-id="${t.id}">Sil</button>
-          </td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table></div>`;
-  }
-  app.innerHTML = (dbAvailable ? '' : bannerNoDb()) + content;
-}
-function openTechFormModal(techId) {
-  const tech = techId ? techById(techId) : null;
-  openModal(tech ? 'Teknisyeni Düzenle' : 'Yeni Teknisyen', `
-    <form id="techFormInner" data-form="techForm" data-tech-id="${tech?.id || ''}">
-      <div class="field"><label>Ad Soyad</label><input name="name" required value="${esc(tech?.name || '')}"></div>
-      <div class="field"><label>Telefon</label><input name="phone" value="${esc(tech?.phone || '')}" placeholder="05xx xxx xx xx"></div>
-      <div class="field"><label style="display:flex;align-items:center;gap:7px;"><input type="checkbox" name="active" style="width:16px;height:16px;" ${tech?.active !== false ? 'checked' : ''}> Aktif</label></div>
-    </form>
-  `, `
-    <button class="btn btn-secondary" data-action="closeModal">Vazgeç</button>
-    <button class="btn btn-primary" type="submit" form="techFormInner">${tech ? 'Kaydet' : 'Oluştur'}</button>
-  `);
-}
-async function saveTechForm(form) {
-  if (!db) return;
-  const techId = form.dataset.techId;
-  const fd = new FormData(form);
-  const name = (fd.get('name') || '').toString().trim();
-  if (!name) { showToast('Ad Soyad gerekli', 'error'); return; }
-  const data = { name, phone: (fd.get('phone') || '').toString(), active: fd.get('active') === 'on' };
-  try {
-    if (techId) { await db.doc('technicians/' + techId).update({ ...data, updatedAt: new Date().toISOString() }); showToast('Teknisyen güncellendi'); }
-    else { await db.doc('technicians/' + uid('tc')).set({ ...data, createdAt: new Date().toISOString() }); showToast('Teknisyen eklendi'); }
-    closeModal();
-  } catch (e) { showToast('Kaydedilemedi', 'error'); }
-}
-async function deleteTech(id) {
-  if (!db) return;
-  try { await db.doc('technicians/' + id).delete(); showToast('Teknisyen silindi'); } catch (e) { showToast('Silinemedi', 'error'); }
 }
 
 /* ======================= Materials catalog ======================= */
@@ -1731,15 +1690,20 @@ function renderUsersPage(app, topbarActions) {
   if (!currentUser?.isAdmin) { app.innerHTML = emptyStateHtml('Bu sayfayı yalnızca sistem yöneticisi görebilir.'); return; }
   topbarActions.innerHTML = `<button class="btn btn-primary" data-action="newUser"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Yeni Kullanıcı</button>`;
   const users = [...state.users].sort((a, b) => a.fullName.localeCompare(b.fullName, 'tr'));
+  const openCountByPerson = new Map();
+  state.tasks.forEach(t => {
+    if (t.assignedTechnicianId && !isClosedStatus(t.status)) openCountByPerson.set(t.assignedTechnicianId, (openCountByPerson.get(t.assignedTechnicianId) || 0) + 1);
+  });
   const content = `
-    <p class="page-lead">Kullanıcı ekleme, düzenleme ve şifre sıfırlama yalnızca sistem yöneticisine açıktır; diğer kullanıcılar sistemin geri kalanını tam yetkiyle kullanır. Yeni kullanıcıya rastgele bir geçici şifre verilir ve yalnızca bir kez gösterilir; kullanıcı ilk girişinde kendi şifresini belirler. Şifresini unutan kullanıcı için "Şifreyi Sıfırla" kullanın.</p>
+    <p class="page-lead">Sistem yöneticisi dışındaki kullanıcılar teknisyendir; işler bu listedeki kişilere atanır. Kullanıcı ekleme, düzenleme ve şifre sıfırlama yalnızca sistem yöneticisine açıktır; teknisyenler sistemin geri kalanını tam yetkiyle kullanır. Yeni kullanıcıya rastgele bir geçici şifre verilir ve yalnızca bir kez gösterilir; kullanıcı ilk girişinde kendi şifresini belirler. Şifresini unutan kullanıcı için "Şifreyi Sıfırla" kullanın.</p>
     ${!users.length ? emptyStateHtml('Kullanıcı yok.') : `<div class="table-wrap"><table>
-      <thead><tr><th>Ad Soyad</th><th>Kullanıcı Adı</th><th>Çalışan Türü</th><th>Yetki</th><th>Durum</th><th>Son Giriş</th><th></th></tr></thead>
+      <thead><tr><th>Ad Soyad</th><th>Kullanıcı Adı</th><th>Çalışan Türü</th><th>Yetki</th><th class="num">Açık İş</th><th>Durum</th><th>Son Giriş</th><th></th></tr></thead>
       <tbody>${users.map(u => `<tr>
         <td>${esc(u.fullName)}${u.id === currentUser.id ? ' <span class="muted-inline">(siz)</span>' : ''}</td>
         <td class="mono">${esc(u.username)}</td>
         <td>${orgPill(u.orgType)}</td>
-        <td>${u.isAdmin ? 'Sistem yöneticisi' : 'Kullanıcı'}</td>
+        <td>${u.isAdmin ? 'Sistem yöneticisi' : 'Teknisyen'}</td>
+        <td class="num mono">${openCountByPerson.get(u.id) || 0}</td>
         <td>${userStatusPill(u)}</td>
         <td class="mono nowrap">${u.lastLoginAt ? esc(fmtDateTime(u.lastLoginAt)) : '—'}</td>
         <td class="row-actions">
@@ -1854,7 +1818,8 @@ async function copyTempPassword(button) {
 
 /* ======================= Login, first-login password, session ======================= */
 let pendingSetupPassword = null;
-const BRAND_HTML = `<div class="sidebar-brand"><span class="brand-mark">DO</span><div class="brand-text"><strong>Durak Ops</strong><span>Akıllı Durak Ekranları</span></div></div>`;
+// Same mark as the sidebar in index.html and the app icons (web/*.png).
+const BRAND_HTML = `<div class="sidebar-brand">${document.querySelector('.sidebar-brand').innerHTML}</div>`;
 
 function showAuthScreen(html) {
   document.querySelector('.app-shell').hidden = true;
@@ -1985,7 +1950,7 @@ function renderUserBox() {
       <span class="user-avatar" aria-hidden="true">${esc(initials)}</span>
       <div class="user-text">
         <strong title="${esc(u.fullName)}">${esc(u.fullName)}</strong>
-        <span>${esc(ORG_TYPE_LABELS[u.orgType] || '')}${u.isAdmin ? ' · Sistem yöneticisi' : ''}</span>
+        <span>${esc(ORG_TYPE_LABELS[u.orgType] || '')} · ${u.isAdmin ? 'Sistem yöneticisi' : 'Teknisyen'}</span>
       </div>
     </div>
     <div class="user-actions">
@@ -2047,7 +2012,7 @@ function reportSummaryText(tasks) {
   if (f.type) parts.push('Tür: ' + TASK_TYPES[f.type]);
   if (f.bolge) parts.push('Şeflik: ' + f.bolge);
   if (f.screenId) parts.push('Ekran: ' + screenLabel(screenById(f.screenId)));
-  if (f.technicianId) parts.push('Teknisyen: ' + (techById(f.technicianId)?.name || '—'));
+  if (f.technicianId) parts.push('Teknisyen: ' + (personName(f.technicianId) || '—'));
   parts.push(`${tasks.length} iş`);
   return parts.join(' · ');
 }
@@ -2089,7 +2054,7 @@ function serviceReportTableHtml(tasks) {
       <td>${esc(t.title)}</td>
       <td>${typePill(t.type)}</td>
       <td>${statusPill(t.status)}</td>
-      <td>${esc(techById(t.assignedTechnicianId)?.name || '—')}</td>
+      <td>${esc(personName(t.assignedTechnicianId) || '—')}</td>
       <td class="wrap-text">${esc(materialsSummary(t) || '—')}</td>
       <td class="nowrap">${fmtDays(resolutionDays(t))}</td>
     </tr>`).join('')}</tbody>
@@ -2147,7 +2112,7 @@ function renderReportsPage(app, topbarActions) {
 
   const f = reportFilters;
   const content = `
-    <div class="print-only print-head"><strong>Durak Ops — Rapor</strong><span>${esc(summary)}</span><span>Oluşturma: ${esc(fmtDateTime(new Date().toISOString()))}</span></div>
+    <div class="print-only print-head"><strong>Akıllı Durak Takip — Rapor</strong><span>${esc(summary)}</span><span>Oluşturma: ${esc(fmtDateTime(new Date().toISOString()))}</span></div>
     <div class="filter-bar report-filters">
       <div class="field" style="margin:0;"><label>Başlangıç</label><input type="date" data-report-filter="start" value="${f.start}"></div>
       <div class="field" style="margin:0;"><label>Bitiş</label><input type="date" data-report-filter="end" value="${f.end}"></div>
@@ -2155,7 +2120,7 @@ function renderReportsPage(app, topbarActions) {
       <div class="field" style="margin:0;"><label>Tür</label><select data-report-filter="type"><option value="">Tümü</option>${optionsHtml(TASK_TYPES, f.type)}</select></div>
       <div class="field" style="margin:0;"><label>Şeflik</label><select data-report-filter="bolge"><option value="">Tümü</option>${distinctBolgeler().map(b => `<option value="${esc(b)}" ${f.bolge === b ? 'selected' : ''}>${esc(b)}</option>`).join('')}</select></div>
       <div class="field" style="margin:0;"><label>Ekran</label><select data-report-filter="screenId"><option value="">Tüm ekranlar</option>${[...state.screens].sort(compareScreens).map(s => `<option value="${esc(s.id)}" ${f.screenId === s.id ? 'selected' : ''}>${esc(screenLabel(s))}</option>`).join('')}</select></div>
-      <div class="field" style="margin:0;"><label>Teknisyen</label><select data-report-filter="technicianId"><option value="">Tümü</option>${state.technicians.map(t => `<option value="${esc(t.id)}" ${f.technicianId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></div>
+      <div class="field" style="margin:0;"><label>Teknisyen</label><select data-report-filter="technicianId"><option value="">Tümü</option>${peopleFilterOptionsHtml(f.technicianId)}</select></div>
       <button class="btn btn-ghost btn-sm" data-action="clearReportFilters">Filtreleri Temizle</button>
     </div>
 
@@ -2239,7 +2204,7 @@ async function exportTasksCsv() {
     const scr = screenById(t.screenId);
     const photoCount = kind => (t.photos || []).filter(p => p.kind === kind).length;
     return [t.id, t.title, TASK_TYPES[t.type] || t.type, STATUS_LABELS[t.status] || t.status, PRIORITY_LABELS[t.priority] || t.priority,
-      screenLabel(scr), scr?.bolgeKod || '', techById(t.assignedTechnicianId)?.name || '', fmtDateTime(t.createdAt),
+      screenLabel(scr), scr?.bolgeKod || '', personName(t.assignedTechnicianId), fmtDateTime(t.createdAt),
       t.dueDate ? fmtDateTime(t.dueDate) : '', t.resolvedAt ? fmtDateTime(t.resolvedAt) : '', (t.extensions || []).length, photoCount('once'), photoCount('sonra')];
   });
   await downloadCsv('is-listesi.csv', headers, rows);
@@ -2252,7 +2217,7 @@ function reportFileName(base) {
 function taskCsvColumns(t) {
   const scr = screenById(t.screenId);
   return [fmtDateTime(reportDate(t) || t.createdAt), scr ? (scr.durakAdi || scr.adres || '') : '', scr ? `${scr.durakNo || ''}${scr.yon ? '-' + scr.yon : ''}` : '',
-    scr?.bolgeKod || '', t.title, TASK_TYPES[t.type] || t.type, STATUS_LABELS[t.status] || t.status, techById(t.assignedTechnicianId)?.name || ''];
+    scr?.bolgeKod || '', t.title, TASK_TYPES[t.type] || t.type, STATUS_LABELS[t.status] || t.status, personName(t.assignedTechnicianId)];
 }
 const TASK_CSV_HEADERS = ['Tarih', 'Ekran', 'Durak No', 'Şeflik', 'İş', 'Tür', 'Durum', 'Teknisyen'];
 async function exportMaterialsReportCsv() {
@@ -2330,9 +2295,6 @@ const actions = {
   editScreen(el) { openScreenFormModal(el.dataset.id); },
   deleteScreen(el) { const id = el.dataset.id; confirmModal('Bu ekran silinecek. Emin misiniz?', () => deleteScreen(id)); },
 
-  newTech() { openTechFormModal(); },
-  editTech(el) { openTechFormModal(el.dataset.id); },
-  deleteTech(el) { const id = el.dataset.id; confirmModal('Bu teknisyen silinecek. Emin misiniz?', () => deleteTech(id)); },
 
   newMaterial() { openMaterialFormModal(); },
   editMaterial(el) { openMaterialFormModal(el.dataset.id); },
@@ -2379,7 +2341,6 @@ document.addEventListener('click', (e) => {
 const forms = {
   taskForm: saveTaskForm,
   screenForm: saveScreenForm,
-  techForm: saveTechForm,
   materialForm: saveMaterialForm,
   historyForm: addHistoryNoteHandler,
   extendForm: saveExtendForm,

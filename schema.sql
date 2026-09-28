@@ -1,4 +1,4 @@
--- Durak Ops veritabanı şeması (SQLite, Python'un yerleşik sqlite3 modülü).
+-- Akıllı Durak Takip veritabanı şeması (SQLite, Python'un yerleşik sqlite3 modülü).
 -- Uygulama her açılışta bu dosyayı çalıştırır; tüm komutlar IF NOT EXISTS olduğu için
 -- tekrar çalıştırmak zararsızdır. Var olan bir tabloya buraya yeni eklenen sütunlar,
 -- açılışta otomatik olarak (boş değerle) eklenir.
@@ -31,15 +31,6 @@ CREATE TABLE IF NOT EXISTS [ekranlar] (
   [guncelleme] TEXT
 );
 
-CREATE TABLE IF NOT EXISTS [teknisyenler] (
-  [id] TEXT PRIMARY KEY,
-  [ad_soyad] TEXT,
-  [telefon] TEXT,
-  [aktif] INTEGER,
-  [olusturma] TEXT,
-  [guncelleme] TEXT
-);
-
 -- Malzeme / işlem kataloğu.
 CREATE TABLE IF NOT EXISTS [malzemeler] (
   [id] TEXT PRIMARY KEY,
@@ -50,6 +41,8 @@ CREATE TABLE IF NOT EXISTS [malzemeler] (
 );
 
 -- İşler: tur = ariza | icerik | genel ; durum = acik | atandi | islemde | cozuldu | kapandi
+-- teknisyen_id: işe atanan kullanıcının id'si (kullanicilar.id). Eski sürümlerdeki ayrı teknisyen tablosu
+-- (teknisyenler) artık kullanılmaz; açılışta eski atamalar aynı adlı kullanıcıya bağlanır.
 CREATE TABLE IF NOT EXISTS [isler] (
   [id] TEXT PRIMARY KEY,
   [baslik] TEXT,

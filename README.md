@@ -1,4 +1,4 @@
-# Durak Ops
+# Akıllı Durak Takip
 
 Akıllı durak ekranları için iş takip sistemi: arıza/içerik/genel işler (liste ve kanban), ekran kayıtları,
 malzeme kataloğu, önce/sonra fotoğrafları, son tarih ve mazeretli süre uzatma, raporlar (CSV), kullanıcılar.

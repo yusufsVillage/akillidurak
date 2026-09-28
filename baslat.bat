@@ -1,5 +1,5 @@
 @echo off
-rem Durak Ops'u bu bilgisayarda calistirir. PythonAnywhere'de kullanilmaz, zip'e girmez.
+rem Akilli Durak Takip'i bu bilgisayarda calistirir. PythonAnywhere'de kullanilmaz, zip'e girmez.
 chcp 65001 >nul
 cd /d "%~dp0"
 set "VENV_PY=.venv\Scripts\python.exe"
@@ -29,6 +29,6 @@ exit /b 1
 
 :fail
 echo.
-echo Durak Ops baslatilamadi. Yukaridaki mesaja bakin.
+echo Akilli Durak Takip baslatilamadi. Yukaridaki mesaja bakin.
 pause
 exit /b 1

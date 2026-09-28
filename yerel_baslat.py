@@ -1,4 +1,4 @@
-"""Durak Ops'u bu bilgisayarda çalıştırır; baslat.bat çift tıklanınca açılır.
+"""Akıllı Durak Takip'i bu bilgisayarda çalıştırır; baslat.bat çift tıklanınca açılır.
 
 PythonAnywhere'de kullanılmaz (orada WSGI dosyası app.py'yi yükler) ve zip'e girmez.
 Veritabanı, fotoğraflar ve oturum anahtarı yerel_veri/ klasöründe durur. Hiçbir şey sorulmaz:
@@ -57,7 +57,7 @@ def windows_username():
 
 def write_creds(path, username, password):
     path.write_text(
-        'Durak Ops ilk giriş bilgileri (sistem yöneticisi)\n'
+        'Akıllı Durak Takip ilk giriş bilgileri (sistem yöneticisi)\n'
         f'Adres            : {URL}\n'
         f'Kullanıcı adı    : {username}\n'
         f'Geçici şifre     : {password}\n'
@@ -87,7 +87,7 @@ def temporary_password():
 def main():
     open_browser = '--no-browser' not in sys.argv
     if already_running():
-        print(f'Durak Ops zaten çalışıyor: {URL}')
+        print(f'Akıllı Durak Takip zaten çalışıyor: {URL}')
         if open_browser:
             webbrowser.open(URL)
         return 0
@@ -120,7 +120,7 @@ def main():
     from app import app
 
     print()
-    print('  Durak Ops çalışıyor')
+    print('  Akıllı Durak Takip çalışıyor')
     print(f'  Adres     : {URL}')
     print(f'  Veritabanı: {db_path}')
     print('  Kapatmak için bu pencereyi kapatın.')

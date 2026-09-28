@@ -1,4 +1,4 @@
-"""Durak Ops: akıllı durak ekranları iş takip sistemi (Flask + sqlite3).
+"""Akıllı Durak Takip: akıllı durak ekranları iş takip sistemi (Flask + sqlite3).
 
 WSGI girişi:  from app import app as application
 Ayarlar yalnızca ortam değişkenlerinden okunur (README.md > Ortam değişkenleri).
@@ -180,13 +180,11 @@ COLLECTIONS = {
         F('kontrolTarihi', 'kontrol_tarihi'), F('ozelNot', 'ozel_not', 'memo'), F('model', 'model'),
         F('serialNo', 'seri_no'), F('installDate', 'kurulum_tarihi'), F('status', 'durum'),
         F('createdAt', 'olusturma'), F('updatedAt', 'guncelleme')]),
-    'technicians': ('teknisyenler', [
-        F('name', 'ad_soyad'), F('phone', 'telefon'), F('active', 'aktif', 'bool'),
-        F('createdAt', 'olusturma'), F('updatedAt', 'guncelleme')]),
     'materials': ('malzemeler', [
         F('name', 'ad'), F('unit', 'birim'), F('createdAt', 'olusturma'), F('updatedAt', 'guncelleme')]),
     'tasks': ('isler', [
         F('title', 'baslik'), F('type', 'tur'), F('priority', 'oncelik'), F('status', 'durum'),
+        # The job's technician: a user id (users are the technicians plus the system administrator).
         F('screenId', 'ekran_id'), F('assignedTechnicianId', 'teknisyen_id'), F('serviceDayType', 'servis_gunu'),
         F('description', 'aciklama', 'memo'), F('createdAt', 'olusturma'), F('updatedAt', 'guncelleme'),
         F('resolvedAt', 'cozulme'), F('dueDate', 'son_tarih')]),
@@ -346,6 +344,22 @@ def ensure_admin(conn):
     conn.execute('UPDATE [kullanicilar] SET [yonetici]=1, [aktif]=1 WHERE [kullanici_adi]=?', (username,))
 
 
+def migrate_technicians(conn):
+    """Jobs used to be assigned to a separate technician list; now they are assigned to users.
+    An old technician id is moved to the user with the same name; unmatched ones show as unassigned."""
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='teknisyenler'").fetchone():
+        return
+    by_name = {' '.join(fold(f"{r['ad'] or ''} {r['soyad'] or ''}").split()): r['id']
+               for r in conn.execute('SELECT [id],[ad],[soyad] FROM [kullanicilar]')}
+    old = conn.execute('SELECT DISTINCT i.[teknisyen_id] AS tid, t.[ad_soyad] AS name FROM [isler] AS i '
+                       'JOIN [teknisyenler] AS t ON t.[id] = i.[teknisyen_id]').fetchall()
+    for row in old:
+        uid = by_name.get(' '.join(fold(row['name']).split()))
+        if uid:
+            conn.execute('UPDATE [isler] SET [teknisyen_id]=? WHERE [teknisyen_id]=?', (uid, row['tid']))
+            log.info('eski teknisyen atamasi kullaniciya baglandi: %s', row['tid'])
+
+
 def init_db():
     os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -359,6 +373,7 @@ def init_db():
             sync_schema(conn)
             seed_once(conn)
             ensure_admin(conn)
+            migrate_technicians(conn)
             conn.execute('COMMIT')
         except BaseException:
             conn.execute('ROLLBACK')
@@ -598,6 +613,15 @@ def check_user_fields(first, last, org):
         raise ApiError(400, 'bad_org_type')
 
 
+@app.get('/api/people')
+@login_required
+def people_list():
+    """Names for assigning jobs, readable by every user (the full user list stays with the administrator)."""
+    rows = db().execute('SELECT [id],[ad],[soyad],[yonetici],[aktif] FROM [kullanicilar] ORDER BY [ad], [soyad]').fetchall()
+    return json_list_response([{'id': r['id'], 'fullName': f"{r['ad'] or ''} {r['soyad'] or ''}".strip(),
+                                'isAdmin': bool(r['yonetici']), 'active': bool(r['aktif'])} for r in rows])
+
+
 @app.get('/api/users')
 @admin_required
 def users_list():
@@ -673,7 +697,7 @@ def users_reset_password(uid):
     return jsonify(ok=True, tempPassword=password)
 
 
-# ---------------------------------------------------------------- collections: screens, technicians, materials, tasks
+# ---------------------------------------------------------------- collections: screens, materials, tasks
 def task_children(conn):
     kids = {}
 
@@ -714,6 +738,9 @@ def check_task_rules(conn, rid, body, row):
     for key, allowed in (('type', TASK_TYPES), ('status', TASK_STATUSES), ('priority', TASK_PRIORITIES)):
         if body.get(key) is not None and body[key] not in allowed:
             raise ApiError(400, 'bad_value')
+    assignee = body.get('assignedTechnicianId')
+    if assignee and not conn.execute('SELECT 1 FROM [kullanicilar] WHERE [id]=?', (str(assignee),)).fetchone():
+        raise ApiError(400, 'bad_assignee')
     old_status = row['durum'] if row else None
     new_status = body.get('status', old_status)
     if 'status' in body and is_closed(new_status) and not is_closed(old_status):
