@@ -197,9 +197,9 @@ def F(js, col, kind='text'):
 COLLECTIONS = {
     'screens': ('ekranlar', [
         F('durakNo', 'durak_no'), F('yon', 'yon'), F('durakId', 'durak_id'), F('durakAdi', 'durak_adi'),
-        F('adres', 'adres'), F('bolgeKod', 'bolge_kod'), F('binaIdNo', 'bina_id_no'), F('dysOnayNo', 'dys_onay_no'),
+        F('adres', 'adres'), F('bolgeKod', 'bolge_kod'),
         F('enerjiBilgisi', 'enerji_bilgisi'), F('elektrikKaynagi', 'elektrik_kaynagi'), F('ekranTipi', 'ekran_tipi'),
-        F('simNo', 'sim_no'), F('enlem', 'enlem', 'num'), F('boylam', 'boylam', 'num'),
+        F('simNo', 'sim_no'), F('imei', 'imei', 'imei'), F('enlem', 'enlem', 'num'), F('boylam', 'boylam', 'num'),
         F('kontrolTarihi', 'kontrol_tarihi', 'date'), F('ozelNot', 'ozel_not', 'memo'), F('model', 'model'),
         F('serialNo', 'seri_no'), F('installDate', 'kurulum_tarihi', 'date'), F('status', 'durum'),
         F('createdAt', 'olusturma', 'date'), F('updatedAt', 'guncelleme', 'date')]),
@@ -234,6 +234,13 @@ def to_db(value, kind):
         return number
     if isinstance(value, (dict, list)):
         raise ApiError(400, 'bad_value')
+    if kind == 'imei':  # stored as 15 digits; spaces and dashes as printed on labels are dropped
+        digits = re.sub(r'[\s\-]', '', str(value))
+        if not digits:
+            return None
+        if not imei_ok(digits):
+            raise ApiError(400, 'bad_imei')
+        return digits
     if kind == 'date':  # ISO date or date-time, as the page sends them (2026-09-28 or 2026-09-28T10:00:00.000Z)
         text = str(value)
         if len(text) > 40 or parse_iso(text) is None:
@@ -243,6 +250,19 @@ def to_db(value, kind):
     if len(text) > (MAX_MEMO if kind == 'memo' else MAX_TEXT):
         raise ApiError(400, 'too_long')
     return text
+
+
+def imei_ok(digits):
+    """15 digits whose last one is the Luhn check digit, as in every real IMEI; catches most typing mistakes."""
+    if not re.fullmatch(r'\d{15}', digits):
+        return False
+    total = 0
+    for i, ch in enumerate(reversed(digits)):
+        d = int(ch)
+        if i % 2:
+            d = d * 2 - 9 if d > 4 else d * 2
+        total += d
+    return total % 10 == 0
 
 
 def from_db(value, kind):
@@ -426,6 +446,17 @@ def migrate_types_and_deadlines(conn):
         log.info('48 saat son tarih verildi: %s acik is', n)
 
 
+def clear_removed_screen_fields(conn):
+    """2026-09-29: Bina ID No and DYS Onay No were removed from screens (IMEI took their place). Databases made
+    before still have the columns; their values are emptied so the information is gone, not just hidden."""
+    have = {r[1] for r in conn.execute('PRAGMA table_info([ekranlar])')}
+    for col in ('bina_id_no', 'dys_onay_no'):
+        if col in have:
+            n = conn.execute(f'UPDATE [ekranlar] SET [{col}]=NULL WHERE [{col}] IS NOT NULL').rowcount
+            if n:
+                log.info('ekranlar.%s bosaltildi: %s ekran', col, n)
+
+
 def init_db():
     os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -442,6 +473,7 @@ def init_db():
             migrate_technicians(conn)
             number_tasks(conn)
             migrate_types_and_deadlines(conn)
+            clear_removed_screen_fields(conn)
             conn.execute('COMMIT')
         except BaseException:
             conn.execute('ROLLBACK')
@@ -989,6 +1021,11 @@ def collection_record(col, rid):
         return jsonify(ok=True)
 
     body = json_body()
+    if col == 'screens' and body.get('imei'):
+        # One device, one screen: the same IMEI on two screens is almost always a typing mistake.
+        imei = to_db(body['imei'], 'imei')
+        if imei and conn.execute('SELECT 1 FROM [ekranlar] WHERE [imei]=? AND [id]<>?', (imei, rid)).fetchone():
+            raise ApiError(409, 'imei_taken')
     if request.method == 'PUT':
         # PUT creates a new record; changes go through PATCH, where the task rules apply.
         if row:

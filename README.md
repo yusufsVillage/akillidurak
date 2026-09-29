@@ -14,6 +14,11 @@ yeniden İşlemde yapılabilir. Arıza istatistiklerinde (en çok arızalanan ek
 Arıza ve Yazılım Arıza birlikte sayılır. Ekran seçimlerinde ekranlar durak numarası ve yönüyle, "#48A - Çınaraltı"
 biçiminde listelenir.
 
+Ekran kaydında cihazın **IMEI** numarası tutulur (isteğe bağlı): 15 hane olmalı ve son hanesi kontrol hanesi
+olarak tutmalıdır (yanlış yazılan rakamları yakalar); boşluk ve tire yazılabilir, kaydedilirken atılır. Aynı IMEI iki
+ekranda olamaz. Bina ID No ve DYS Onay No alanları kaldırıldı; eski veritabanlarında bu değerler uygulama
+açılırken silinir.
+
 Eski sürümden geçişte (uygulama ilk açıldığında kendiliğinden) türler Arıza → Ekran Arıza, İçerik → Yazılım
 Arıza, Genel → Altyapı İşi; durumlar Açık/Atandı/İşlemde → İşlemde, Çözüldü/Kapandı → Kapandı olur. Son tarihi
 olmayan kapanmamış işlere bir kez 48 saat verilir. Eski işlerin başlık ve öncelik bilgisi silinmez, başlık
@@ -31,7 +36,7 @@ Aşağıda **KULLANICI** geçen her yere kendi PythonAnywhere kullanıcı adın�
 | `app.py` | Sunucu (Flask). WSGI girişi: `from app import app as application` |
 | `schema.sql` | Veritabanı şeması. Uygulama her açılışta çalıştırır; eksik tablo/sütunu ekler, veriye dokunmaz |
 | `web/` | Sayfa (HTML, CSS, JavaScript) |
-| `seed/` | İlk veri: 174 ekran (Excel listesinden; 84'ünün Bina ID ve DYS Onay No'su eski listeden) ve 48 malzeme. Yalnızca veritabanı ilk kez oluşturulurken yüklenir. SIM numaraları depoya konmadığı için boştur; uygulamada sonradan girilir |
+| `seed/` | İlk veri: 174 ekran (Excel listesinden) ve 48 malzeme. Yalnızca veritabanı ilk kez oluşturulurken yüklenir. SIM numaraları ve IMEI'ler depoya konmadığı için boştur; uygulamada sonradan girilir |
 | `baslat.bat`, `yerel_baslat.py` | Kendi bilgisayarınızda çalıştırmak için (aşağıda). Zip'e girmez |
 | `requirements.txt` | Gerekli paketler (Flask), sabit sürümlerle |
 | `build_zip.py` | GitHub kullanılmadan kurulum için yüklenecek zip'i hazırlar |

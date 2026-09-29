@@ -34,8 +34,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-04",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517188430",
-  "dysOnayNo": "57856",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -55,8 +53,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-04",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517255107",
-  "dysOnayNo": "55128",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -76,8 +72,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-04",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517255122",
-  "dysOnayNo": "55146",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -135,8 +129,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-04",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517255109",
-  "dysOnayNo": "55130",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -156,8 +148,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-04",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517162192",
-  "dysOnayNo": "57228",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -253,8 +243,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-10",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517254028",
-  "dysOnayNo": "55020",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -274,8 +262,6 @@
   "simNo": null,
   "kontrolTarihi": "2017-10-10",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517268539",
-  "dysOnayNo": "57000",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -295,8 +281,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-10",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517268549",
-  "dysOnayNo": "57010",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -316,8 +300,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-10",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517251253",
-  "dysOnayNo": "54466",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -337,8 +319,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-05",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517252389",
-  "dysOnayNo": "54621",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -358,8 +338,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-05",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517288588",
-  "dysOnayNo": "61108",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -379,8 +357,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-05",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517172965",
-  "dysOnayNo": "56197",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -400,8 +376,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-05",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517255775",
-  "dysOnayNo": "55702",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -440,8 +414,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-05",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517288678",
-  "dysOnayNo": "61140",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -461,8 +433,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-05",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517188932",
-  "dysOnayNo": "55946",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -482,8 +452,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-05",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517173785",
-  "dysOnayNo": "55805",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -503,8 +471,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-05",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517195517",
-  "dysOnayNo": "55807",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -543,7 +509,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-05",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517172972",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -563,8 +528,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-05",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517186568",
-  "dysOnayNo": "55948",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -584,8 +547,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-05",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517174953",
-  "dysOnayNo": "57717",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -605,8 +566,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-05",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517174958",
-  "dysOnayNo": "55943",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -626,8 +585,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-24",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517269992",
-  "dysOnayNo": "57210",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -704,8 +661,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-24",
   "ozelNot": "NORMAL",
-  "binaIdNo": "VERİLMEDİ",
-  "dysOnayNo": "58076",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -744,8 +699,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-24",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517268550",
-  "dysOnayNo": "57014",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -765,8 +718,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-24",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517273792",
-  "dysOnayNo": "58044",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -805,8 +756,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-24",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517162192",
-  "dysOnayNo": "57226",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -940,8 +889,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517221627",
-  "dysOnayNo": "57836",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1018,8 +965,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517273090",
-  "dysOnayNo": "57701",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1058,8 +1003,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517162192",
-  "dysOnayNo": "57232",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1098,8 +1041,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-09",
   "ozelNot": "NORMAL",
-  "binaIdNo": "VERİLMEDİ",
-  "dysOnayNo": "57635",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1119,8 +1060,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-09",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517162192",
-  "dysOnayNo": "57001",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1140,8 +1079,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-09",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517257414",
-  "dysOnayNo": "57011",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1161,8 +1098,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-09",
   "ozelNot": "NORMAL",
-  "binaIdNo": "VERİLMEDİ",
-  "dysOnayNo": "57854",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1201,8 +1136,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-15",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517165770",
-  "dysOnayNo": "57687",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1393,8 +1326,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-09",
   "ozelNot": "NORMAL",
-  "binaIdNo": "VERİLMEDİ",
-  "dysOnayNo": "57625",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1433,8 +1364,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-09",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517172436",
-  "dysOnayNo": "58098",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1454,8 +1383,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-09",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517264690",
-  "dysOnayNo": "57622",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1475,8 +1402,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-09",
   "ozelNot": "NORMAL",
-  "binaIdNo": "516756180",
-  "dysOnayNo": "57621",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1496,8 +1421,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-09",
   "ozelNot": "NORMAL",
-  "binaIdNo": "5172011096",
-  "dysOnayNo": "57688",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1555,8 +1478,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-09",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517267959",
-  "dysOnayNo": "56863",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1576,8 +1497,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-09",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517268446",
-  "dysOnayNo": "56915",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1597,8 +1516,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-09",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517268448",
-  "dysOnayNo": "56916",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1618,8 +1535,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-09",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517268449",
-  "dysOnayNo": "56917",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1639,8 +1554,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-09",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517191551",
-  "dysOnayNo": "56856",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1698,8 +1611,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-09",
   "ozelNot": "NORMAL",
-  "binaIdNo": "VERİLMEDİ",
-  "dysOnayNo": "57855",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1833,8 +1744,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-31",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517268499",
-  "dysOnayNo": "56972",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1854,8 +1763,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-31",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517252394",
-  "dysOnayNo": "54626",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1913,8 +1820,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-31",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517250429",
-  "dysOnayNo": "54403",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1934,8 +1839,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-31",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517254026",
-  "dysOnayNo": "55018",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1955,8 +1858,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-31",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517255118",
-  "dysOnayNo": "55138",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -1976,8 +1877,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-31",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517251244",
-  "dysOnayNo": "54455",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2035,8 +1934,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-31",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517250434",
-  "dysOnayNo": "54409",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2056,8 +1953,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-31",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517195587",
-  "dysOnayNo": "58188",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2077,8 +1972,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-31",
   "ozelNot": "NORMAL",
-  "binaIdNo": "516256201",
-  "dysOnayNo": "58155",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2098,8 +1991,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-31",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517184168",
-  "dysOnayNo": "58211",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2119,8 +2010,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-31",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517186569",
-  "dysOnayNo": "58130",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2178,8 +2067,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-22",
   "ozelNot": "NORMAL",
-  "binaIdNo": "VERİLMEDİ",
-  "dysOnayNo": "58258",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2199,8 +2086,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-22",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517276402",
-  "dysOnayNo": "58246",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2372,8 +2257,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517250440",
-  "dysOnayNo": "54411",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2393,8 +2276,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517251232",
-  "dysOnayNo": "54416",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2433,8 +2314,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-31",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517252379",
-  "dysOnayNo": "54612",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2473,8 +2352,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-31",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517252382",
-  "dysOnayNo": "54614",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2494,8 +2371,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-31",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517251251",
-  "dysOnayNo": "54461",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2534,7 +2409,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "AĞAÇ",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2630,8 +2504,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517250432",
-  "dysOnayNo": "54407",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2651,8 +2523,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517251266",
-  "dysOnayNo": "54489",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2672,8 +2542,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517250426",
-  "dysOnayNo": "54400",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2693,8 +2561,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517250427",
-  "dysOnayNo": "54401",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2714,8 +2580,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517250428",
-  "dysOnayNo": "54402",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2735,8 +2599,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517250430",
-  "dysOnayNo": "54404",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2756,8 +2618,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517250433",
-  "dysOnayNo": "54408",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2777,8 +2637,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517250442",
-  "dysOnayNo": "54414",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2798,8 +2656,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517250441",
-  "dysOnayNo": "54413",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2838,8 +2694,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517251247",
-  "dysOnayNo": "54458",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2859,8 +2713,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517251236",
-  "dysOnayNo": "54447",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2880,8 +2732,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517255119",
-  "dysOnayNo": "55141",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2901,8 +2751,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517252392",
-  "dysOnayNo": "54625",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -2960,8 +2808,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517251234",
-  "dysOnayNo": "54405",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -3000,8 +2846,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-10-31",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517251238",
-  "dysOnayNo": "54450",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -3439,8 +3283,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517177923",
-  "dysOnayNo": "55821",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  },
@@ -3460,8 +3302,6 @@
   "simNo": null,
   "kontrolTarihi": "2018-11-23",
   "ozelNot": "NORMAL",
-  "binaIdNo": "517188406",
-  "dysOnayNo": "55803",
   "status": "aktif",
   "createdAt": "2026-09-25T00:00:00.000Z"
  }

@@ -14,6 +14,8 @@ const STATUS_LABELS = { islemde: 'İşlemde', kapandi: 'Kapandı' };
 // Older history entries may carry the statuses used before 2026-09-29.
 const OLD_STATUS_LABELS = { acik: 'Açık', atandi: 'Atandı', cozuldu: 'Çözüldü' };
 function statusLabel(s) { return STATUS_LABELS[s] || OLD_STATUS_LABELS[s] || s; }
+// The screen's device number (15 digits); the server checks it and that no other screen has it.
+const IMEI_INPUT_ATTRS = 'inputmode="numeric" autocomplete="off" maxlength="20" placeholder="15 haneli"';
 const SCREEN_STATUS_LABELS = { aktif: 'Aktif', arizali: 'Arızalı', bakimda: 'Bakımda', pasif: 'Pasif' };
 const ROUTE_TITLES = { panel: 'Panel', tasks: 'İşler', screens: 'Ekranlar', map: 'Harita', materials: 'Malzeme Kataloğu', reports: 'Raporlar', users: 'Kullanıcılar', taskDetail: 'İş Detayı', screenDetail: 'Ekran Geçmişi' };
 const ORG_TYPE_LABELS = { kurum: 'Kurum çalışanı', firma: 'Firma çalışanı' };
@@ -83,6 +85,8 @@ const API_ERRORS = {
   due_fixed: `Her işin süresi açıldığı andan itibaren ${TASK_DURATION_HOURS} saattir; süre dolunca mazeret gösterilerek uzatılabilir.`,
   not_overdue: 'Bu işin süresi henüz dolmadı; süre dolunca mazeret gösterilerek uzatılabilir.',
   required_fields: 'Tür, ekran, teknisyen, servis günü ve açıklama zorunludur.',
+  bad_imei: 'IMEI geçersiz: 15 haneli olmalı. Rakamlardan biri yanlış yazılmış olabilir; cihaz etiketiyle karşılaştırın.',
+  imei_taken: 'Bu IMEI başka bir ekranda kayıtlı.',
   task_fields_fixed: 'Tür, ekran, teknisyen ve servis günü iş açıldıktan sonra değiştirilemez.',
   reason_required: 'Süreyi uzatmak için mazeret yazmalısınız.',
   due_invalid: 'Yeni son tarih hem şimdiden hem de mevcut son tarihten sonra olmalı.',
@@ -798,8 +802,7 @@ function screenInfoCardHtml(s, headLinks = '', readOnly = false) {
       ${text('ozelNot', 'Özel Not', 'span-2')}
       ${text('enlem', 'Enlem', '', 'inputmode="decimal"')}
       ${text('boylam', 'Boylam', '', 'inputmode="decimal"')}
-      ${text('binaIdNo', 'Bina ID No')}
-      ${text('dysOnayNo', 'DYS Onay No')}
+      ${text('imei', 'IMEI', 'span-2', IMEI_INPUT_ATTRS)}
       ${text('model', 'Ekran Modeli')}
       ${text('serialNo', 'Seri No')}
     </div>
@@ -1070,7 +1073,7 @@ function filteredScreens() {
     if (screenFilters.ekranTipi && s.ekranTipi !== screenFilters.ekranTipi) return false;
     if (screenFilters.q) {
       const q = screenFilters.q.toLocaleLowerCase('tr');
-      const hay = [s.durakAdi, s.adres, s.durakNo, s.durakId, s.simNo, s.ozelNot, s.model, s.serialNo].filter(Boolean).join(' ').toLocaleLowerCase('tr');
+      const hay = [s.durakAdi, s.adres, s.durakNo, s.durakId, s.simNo, s.imei, s.ozelNot, s.model, s.serialNo].filter(Boolean).join(' ').toLocaleLowerCase('tr');
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -1144,19 +1147,16 @@ function openScreenFormModal(screenId) {
         <div class="field"><label>Durum</label><select name="status">${optionsHtml(SCREEN_STATUS_LABELS, screen?.status || 'aktif')}</select></div>
         <div class="field"><label>Kontrol Tarihi</label><input type="date" name="kontrolTarihi" value="${esc((screen?.kontrolTarihi || '').slice(0, 10))}"></div>
       </div>
+      <div class="field"><label>MEDAŞ BAKS / Enerji Alış Noktası</label><input name="enerjiBilgisi" value="${esc(screen?.enerjiBilgisi || '')}"></div>
       <div class="field-row">
-        <div class="field"><label>MEDAŞ BAKS / Enerji Alış Noktası</label><input name="enerjiBilgisi" value="${esc(screen?.enerjiBilgisi || '')}"></div>
         <div class="field"><label>SIM No</label><input name="simNo" value="${esc(screen?.simNo || '')}"></div>
+        <div class="field"><label for="screenFormImei">IMEI</label><input id="screenFormImei" name="imei" value="${esc(screen?.imei || '')}" ${IMEI_INPUT_ATTRS}></div>
       </div>
       <div class="field-row">
         <div class="field"><label>Enlem</label><input name="enlem" inputmode="decimal" value="${esc(screen?.enlem ?? '')}" placeholder="Örn. 37.876225"></div>
         <div class="field"><label>Boylam</label><input name="boylam" inputmode="decimal" value="${esc(screen?.boylam ?? '')}" placeholder="Örn. 32.48664"></div>
       </div>
       <div class="field"><label>Özel Not</label><input name="ozelNot" value="${esc(screen?.ozelNot || '')}"></div>
-      <div class="field-row">
-        <div class="field"><label>Bina ID No</label><input name="binaIdNo" value="${esc(screen?.binaIdNo || '')}"></div>
-        <div class="field"><label>DYS Onay No</label><input name="dysOnayNo" value="${esc(screen?.dysOnayNo || '')}"></div>
-      </div>
       <div class="field-row">
         <div class="field"><label>Elektrik Kaynağı</label><select name="elektrikKaynagi"><option value="">—</option>${ELEKTRIK_KAYNAGI_OPTIONS.map(o => `<option value="${o}" ${screen?.elektrikKaynagi === o ? 'selected' : ''}>${o}</option>`).join('')}</select></div>
         <div class="field"><label>Ekran Tipi</label><select name="ekranTipi"><option value="">—</option>${EKRAN_TIPI_OPTIONS.map(o => `<option value="${o}" ${screen?.ekranTipi === o ? 'selected' : ''}>Tip ${o}</option>`).join('')}</select></div>
@@ -1187,10 +1187,9 @@ async function saveScreenForm(form) {
     adres: val('adres'),
     durakId: val('durakId'),
     bolgeKod: val('bolgeKod'),
-    binaIdNo: val('binaIdNo'),
-    dysOnayNo: val('dysOnayNo'),
     enerjiBilgisi: val('enerjiBilgisi'),
     simNo: val('simNo'),
+    imei: val('imei'),
     enlem: val('enlem'),
     boylam: val('boylam'),
     kontrolTarihi: val('kontrolTarihi') || null,

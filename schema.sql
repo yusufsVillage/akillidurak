@@ -13,12 +13,11 @@ CREATE TABLE IF NOT EXISTS [ekranlar] (
   [durak_adi] TEXT,
   [adres] TEXT,
   [bolge_kod] TEXT,
-  [bina_id_no] TEXT,
-  [dys_onay_no] TEXT,
   [enerji_bilgisi] TEXT,
   [elektrik_kaynagi] TEXT,
   [ekran_tipi] TEXT,
   [sim_no] TEXT,
+  [imei] TEXT,           -- 15 hane (ekranın modem cihazı); iki ekranda aynı olamaz
   [enlem] REAL,
   [boylam] REAL,
   [kontrol_tarihi] TEXT,
@@ -143,6 +142,7 @@ CREATE TABLE IF NOT EXISTS [bildirimler] (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS [ux_isler_no] ON [isler] ([is_no]);
+CREATE UNIQUE INDEX IF NOT EXISTS [ux_ekranlar_imei] ON [ekranlar] ([imei]);
 CREATE INDEX IF NOT EXISTS [ix_bildirimler_bekleyen] ON [bildirimler] ([gonderim], [id]);
 CREATE UNIQUE INDEX IF NOT EXISTS [ux_kullanicilar_adi] ON [kullanicilar] ([kullanici_adi]);
 CREATE INDEX IF NOT EXISTS [ix_isler_ekran] ON [isler] ([ekran_id]);
