@@ -581,6 +581,8 @@ a.bar-label:hover{color:var(--accent);text-decoration:underline;}
 .report-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
 .expander{display:inline-block;width:12px;color:var(--text-muted);transition:transform .15s var(--ease-out);}
 .expander.open{transform:rotate(90deg);}
+.expander-space{display:inline-block;width:12px;}
+tr.muted-row > td{color:var(--text-muted);}
 tr.report-detail > td{background:var(--surface-2);padding:8px 14px 12px 32px;}
 table.mini-table{min-width:0;font-size:12px;background:var(--surface);border-radius:var(--radius-sm);}
 .mini-table th,.mini-table td{padding:6px 10px;}

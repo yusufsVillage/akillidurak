@@ -2,7 +2,9 @@
 
 Akıllı durak ekranları için iş takip sistemi: Ekran Arıza / Yazılım Arıza / Altyapı İşi türünde işler (liste ve
 kanban), ekran kayıtları, malzeme kataloğu, önce/sonra fotoğrafları, 48 saatlik süre ve mazeretli süre uzatma,
-raporlar (CSV), kullanıcılar.
+raporlar (seçilen tarih aralığında hangi ekrana kaç kez gidildiği, malzeme / işlem ve servis dökümü; CSV),
+kullanıcılar. Ekran ziyaretlerinde ekrandaki her iş bir ziyaret sayılır; yalnızca tamamlanan ziyaretler için tarih
+ölçütü "İşin kapanışı" seçilir.
 
 İş açarken tür, ekran, teknisyen, servis günü ve açıklama zorunludur. Tür, ekran, teknisyen ve servis günü iş
 açıldıktan sonra değiştirilemez (eski bir işte eksik olan bir kez doldurulabilir); açıklama düzenlenebilir ama

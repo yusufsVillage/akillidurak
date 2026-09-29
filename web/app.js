@@ -2168,6 +2168,81 @@ function serviceReportTableHtml(tasks) {
     </tr>`).join('')}</tbody>
   </table></div>`;
 }
+
+/* Screen visits: every job at a screen within the report's filters counts as one visit to it. */
+let showUnvisited = false;
+function screenVisitReport(tasks) {
+  const rows = new Map();
+  for (const t of tasks) {
+    // By closing date only finished jobs count, also when no date range is chosen.
+    if (!t.screenId || (reportFilters.basis === 'resolved' && !t.resolvedAt)) continue;
+    if (!rows.has(t.screenId)) rows.set(t.screenId, { id: t.screenId, screen: screenById(t.screenId), tasks: [], byType: {}, closed: 0 });
+    const r = rows.get(t.screenId);
+    r.tasks.push(t);
+    r.byType[t.type] = (r.byType[t.type] || 0) + 1;
+    if (isClosedStatus(t.status)) r.closed++;
+  }
+  return [...rows.values()].map(r => {
+    const dates = r.tasks.map(t => reportDate(t) || t.createdAt).filter(Boolean).sort();
+    const people = [...new Set(r.tasks.map(t => personName(t.assignedTechnicianId)).filter(Boolean))];
+    return { ...r, count: r.tasks.length, first: dates[0], last: dates[dates.length - 1], people };
+  }).sort((a, b) => b.count - a.count || compareScreens(a.screen || {}, b.screen || {}));
+}
+// Active screens in the report's area (şeflik / screen filter) with no visit in the range.
+function unvisitedScreens(visitRows) {
+  const seen = new Set(visitRows.map(r => r.id));
+  return state.screens.filter(s => !seen.has(s.id) && s.status !== 'pasif'
+    && (!reportFilters.bolge || s.bolgeKod === reportFilters.bolge)
+    && (!reportFilters.screenId || s.id === reportFilters.screenId)).sort(compareScreens);
+}
+function screenVisitTableHtml(rows, unvisited) {
+  const extra = showUnvisited ? unvisited : [];
+  if (!rows.length && !extra.length) return emptyStateHtml('Seçili ölçütlerde hiçbir ekrana gidilmemiş.');
+  const typeKeys = Object.keys(TASK_TYPES);
+  const screenLink = (id, s) => `<a class="link" href="#screen-${esc(id)}" data-action="openScreen" data-id="${esc(id)}">${esc(screenLabel(s))}</a>`;
+  return `<div class="table-wrap"><table>
+    <thead><tr><th>Ekran</th><th>Şeflik</th><th class="num">Ziyaret</th>${typeKeys.map(k => `<th class="num">${esc(TASK_TYPES[k])}</th>`).join('')}<th class="num">Kapanan</th><th>Son Ziyaret</th></tr></thead>
+    <tbody>${rows.map(r => {
+      const key = 'visit:' + r.id;
+      const open = reportExpanded.has(key);
+      return `<tr class="clickable" data-action="toggleReportRow" data-id="${esc(key)}" title="Bu ekrandaki işleri göster">
+        <td><span class="expander ${open ? 'open' : ''}">▸</span> ${screenLink(r.id, r.screen)}</td>
+        <td>${esc(r.screen?.bolgeKod || '—')}</td>
+        <td class="num"><strong>${r.count}</strong></td>
+        ${typeKeys.map(k => `<td class="num">${r.byType[k] || '—'}</td>`).join('')}
+        <td class="num">${r.closed}</td>
+        <td class="mono nowrap">${r.last ? esc(fmtDate(r.last)) : '—'}</td>
+      </tr>${open ? `<tr class="report-detail"><td colspan="${typeKeys.length + 5}"><table class="mini-table">
+        <thead><tr><th>Tarih</th><th>İş</th><th>Tür</th><th>Durum</th><th>Teknisyen</th></tr></thead>
+        <tbody>${[...r.tasks].sort(reportTaskSort).map(t => `<tr>
+          <td class="mono nowrap">${esc(fmtDate(reportDate(t) || t.createdAt))}</td>
+          <td><a class="link" href="#task-${esc(t.id)}" data-action="openTask" data-id="${esc(t.id)}">${esc([taskNo(t), taskSummary(t, 50)].filter(Boolean).join(' '))}</a></td>
+          <td>${typePill(t.type)}</td>
+          <td>${statusPill(t.status)}</td>
+          <td>${esc(personName(t.assignedTechnicianId) || '—')}</td>
+        </tr>`).join('')}</tbody>
+      </table></td></tr>` : ''}`;
+    }).join('')}${extra.map(s => `<tr class="muted-row">
+        <td><span class="expander-space"></span> ${screenLink(s.id, s)}</td>
+        <td>${esc(s.bolgeKod || '—')}</td>
+        <td class="num">0</td>
+        ${typeKeys.map(() => '<td class="num">—</td>').join('')}
+        <td class="num">—</td>
+        <td>—</td>
+      </tr>`).join('')}</tbody>
+  </table></div>`;
+}
+async function exportVisitsCsv() {
+  const rows = screenVisitReport(filteredReportTasks());
+  const typeKeys = Object.keys(TASK_TYPES);
+  const lines = rows.map(r => [screenCode(r.screen).slice(1), r.screen ? (r.screen.durakAdi || r.screen.adres || '') : 'Bilinmeyen ekran', r.screen?.bolgeKod || '',
+    r.count, ...typeKeys.map(k => r.byType[k] || 0), r.closed, r.first ? fmtDate(r.first) : '', r.last ? fmtDate(r.last) : '', r.people.join(', ')]);
+  if (showUnvisited) {
+    for (const s of unvisitedScreens(rows)) lines.push([screenCode(s).slice(1), s.durakAdi || s.adres || '', s.bolgeKod || '', 0, ...typeKeys.map(() => 0), 0, '', '', '']);
+  }
+  await downloadCsv(reportFileName('ekran-ziyaretleri'),
+    ['Durak No', 'Ekran', 'Şeflik', 'Ziyaret', ...typeKeys.map(k => TASK_TYPES[k]), 'Kapanan', 'İlk Ziyaret', 'Son Ziyaret', 'Teknisyenler'], lines);
+}
 // Disk use on the server (photos + database), re-read at most once a minute while Raporlar is open.
 let storageStats = null;
 let storageStatsAt = 0;
@@ -2218,6 +2293,10 @@ function renderReportsPage(app, topbarActions) {
 
   const weeks = buildWeeklyBuckets(tasks, 12);
 
+  const visitRows = screenVisitReport(tasks);
+  const visitTotal = visitRows.reduce((sum, r) => sum + r.count, 0);
+  const unvisited = unvisitedScreens(visitRows);
+
   const f = reportFilters;
   const content = `
     <div class="print-only print-head"><strong>Akıllı Durak Takip — Rapor</strong><span>${esc(summary)}</span><span>Oluşturma: ${esc(fmtDateTime(new Date().toISOString()))}</span></div>
@@ -2234,6 +2313,7 @@ function renderReportsPage(app, topbarActions) {
 
     <div class="stat-grid">
       <div class="stat-tile"><div class="stat-label">Toplam İş</div><div class="stat-value">${total}</div><div class="stat-sub">seçili aralıkta</div></div>
+      <a class="stat-tile stat-link" href="#reports" data-action="showVisits"><div class="stat-label">Gidilen Ekran</div><div class="stat-value">${visitRows.length}</div><div class="stat-sub">${visitTotal} ziyaret${unvisited.length ? ` · ${unvisited.length} ekrana gidilmedi` : ''}</div></a>
       <div class="stat-tile"><div class="stat-label">Ort. Kapanış Süresi</div><div class="stat-value">${avgResolutionDays.toFixed(1)}</div><div class="stat-sub">gün</div></div>
       <div class="stat-tile"><div class="stat-label">İşlemde Oranı</div><div class="stat-value">%${openShare}</div><div class="stat-sub">kapatılmamış</div></div>
       <div class="stat-tile"><div class="stat-label">Kullanılan Kalem</div><div class="stat-value">${matRows.length}</div><div class="stat-sub">farklı malzeme/işlem</div></div>
@@ -2265,6 +2345,19 @@ function renderReportsPage(app, topbarActions) {
           <h3>Tür Dağılımı</h3>
           ${barChart(typeBarItems(typeCounts))}
         </div>
+      </div>
+    </div>
+
+    <div class="section-card" id="screenVisits">
+      <div class="section-head">
+        <h3>Ekran Ziyaretleri</h3>
+        ${unvisited.length ? `<button type="button" class="btn btn-ghost btn-sm" data-action="toggleUnvisited">${showUnvisited ? 'Gidilmeyenleri gizle' : `Gidilmeyenleri göster (${unvisited.length})`}</button>` : ''}
+      </div>
+      <div class="section-sub">${visitRows.length} ekrana toplam ${visitTotal} kez gidildi${unvisited.length ? `, ${unvisited.length} aktif ekrana hiç gidilmedi` : ''} · ${esc(summary)}</div>
+      <div class="hint" style="margin:-4px 0 10px;">Her iş bir ziyaret sayılır. Yalnızca tamamlanan ziyaretleri saymak için "Tarih ölçütü"nde "İşin kapanışı"nı seçin. Satıra tıklayınca o ekrandaki işler açılır.</div>
+      ${screenVisitTableHtml(visitRows, unvisited)}
+      <div class="report-actions">
+        <button class="btn btn-secondary btn-sm" data-action="exportVisitsCsv">Ziyaret listesini CSV indir</button>
       </div>
     </div>
 
@@ -2417,6 +2510,9 @@ const actions = {
   exportMaterialsCsv() { exportMaterialsReportCsv(); },
   exportServiceCsv() { exportServiceCsv(); },
   exportDetailCsv() { exportDetailCsv(); },
+  exportVisitsCsv() { return exportVisitsCsv(); },
+  toggleUnvisited() { showUnvisited = !showUnvisited; render(); },
+  showVisits() { document.getElementById('screenVisits')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
   printPage() { window.print(); },
   setReportView(el) { reportView = el.dataset.view; render(); },
   toggleReportRow(el) {
