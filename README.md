@@ -1,7 +1,20 @@
 # Akıllı Durak Takip
 
-Akıllı durak ekranları için iş takip sistemi: arıza/içerik/genel işler (liste ve kanban), ekran kayıtları,
-malzeme kataloğu, önce/sonra fotoğrafları, son tarih ve mazeretli süre uzatma, raporlar (CSV), kullanıcılar.
+Akıllı durak ekranları için iş takip sistemi: Ekran Arıza / Yazılım Arıza / Altyapı İşi türünde işler (liste ve
+kanban), ekran kayıtları, malzeme kataloğu, önce/sonra fotoğrafları, 48 saatlik süre ve mazeretli süre uzatma,
+raporlar (CSV), kullanıcılar.
+
+İş açarken tür, ekran, teknisyen, servis günü ve açıklama zorunludur; bunlar sonradan boşaltılamaz. İş
+**İşlemde** durumunda açılır ve son tarihi açıldığı andan itibaren 48 saattir (elle girilmez, değiştirilemez).
+Süre dolunca iş sayfasındaki "Süreyi Uzat" ile mazeret yazılarak uzatılır. İşin iki durumu vardır: İşlemde ve
+Kapandı. Durum, iş sayfasında seçilip yanındaki **Kaydet** ile değişir; ekrana bağlı iş, önce ve sonra fotoğrafı
+yüklenmeden kapatılamaz. Kapanmış iş aynı yolla yeniden İşlemde yapılabilir. Arıza istatistiklerinde (en çok
+arızalanan ekranlar, harita, ekran geçmişi) Ekran Arıza ve Yazılım Arıza birlikte sayılır.
+
+Eski sürümden geçişte (uygulama ilk açıldığında kendiliğinden) türler Arıza → Ekran Arıza, İçerik → Yazılım
+Arıza, Genel → Altyapı İşi; durumlar Açık/Atandı/İşlemde → İşlemde, Çözüldü/Kapandı → Kapandı olur. Son tarihi
+olmayan kapanmamış işlere bir kez 48 saat verilir. Eski işlerin başlık ve öncelik bilgisi silinmez, başlık
+görünmeye devam eder.
 
 Python + Flask ile yazılmıştır, veritabanı SQLite'tır (Python'un kendi `sqlite3` modülü). PythonAnywhere'in
 ücretsiz planında çalışacak şekilde hazırlanmıştır.
@@ -171,10 +184,10 @@ ortam ve gizli değer içermez). **Files** sekmesinde `/home/KULLANICI/` içine 
 
 ## Telegram bildirimleri
 
-Uygulama şu durumlarda bir Telegram grubuna mesaj gönderir: yeni iş, iş çözüldü, iş kapatıldı, iş yeniden açıldı,
-süreye 24 saat kaldı, süre doldu, süre uzatıldı, iş silindi. Her mesajda iş numarası (#12) ve durak adı, silinmemiş
-işlerde işin bağlantısı vardır; içerik duruma göre değişir (teknisyen, son tarih, çözüm süresi, kullanılan
-malzemeler, mazeret, silen kişi ve silinen fotoğraf sayısı…).
+Uygulama şu durumlarda bir Telegram grubuna mesaj gönderir: yeni iş, iş kapatıldı, iş yeniden işleme alındı,
+süreye 24 saat kaldı, süre doldu, süre uzatıldı, iş silindi. Her mesajda iş numarası (#12), durak adı, iş türü ve
+açıklama, silinmemiş işlerde işin bağlantısı vardır; içerik duruma göre değişir (teknisyen, servis günü, son
+tarih, işin süresi, kullanılan malzemeler, mazeret, silen kişi ve silinen fotoğraf sayısı…).
 
 1. **Bot oluşturun:** Telegram'da **@BotFather** ile konuşup `/newbot` yazın; bota bir ad (ör. Akıllı Durak Takip) ve
    `bot` ile biten bir kullanıcı adı verin. BotFather'ın verdiği anahtarı (token) kopyalayın; kimseyle paylaşmayın.

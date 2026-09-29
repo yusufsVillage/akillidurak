@@ -297,18 +297,11 @@ a.stat-link:hover{border-color:var(--accent);}
 .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap;}
 .pill svg{width:10px;height:10px;}
 .pill-dot{width:7px;height:7px;border-radius:50%;flex:none;}
-.pill-type-ariza{background:color-mix(in srgb, var(--cat-ariza) 16%, transparent);color:var(--cat-ariza);}
-.pill-type-icerik{background:color-mix(in srgb, var(--cat-icerik) 16%, transparent);color:var(--cat-icerik);}
-.pill-type-genel{background:color-mix(in srgb, var(--cat-genel) 16%, transparent);color:var(--cat-genel);}
-.pill-status-acik{background:color-mix(in srgb, var(--status-1) 22%, transparent);color:var(--status-4);}
-.pill-status-atandi{background:color-mix(in srgb, var(--status-2) 22%, transparent);color:var(--status-4);}
+.pill-type-ekran{background:color-mix(in srgb, var(--cat-ariza) 16%, transparent);color:var(--cat-ariza);}
+.pill-type-yazilim{background:color-mix(in srgb, var(--cat-icerik) 16%, transparent);color:var(--cat-icerik);}
+.pill-type-altyapi{background:color-mix(in srgb, var(--cat-genel) 16%, transparent);color:var(--cat-genel);}
 .pill-status-islemde{background:color-mix(in srgb, var(--status-3) 24%, transparent);color:var(--status-5);}
-.pill-status-cozuldu{background:color-mix(in srgb, var(--status-4) 20%, transparent);color:var(--status-5);}
 .pill-status-kapandi{background:var(--surface-2);color:var(--text-muted);}
-.pill-prio-dusuk{background:var(--surface-2);color:var(--text-secondary);}
-.pill-prio-orta{background:color-mix(in srgb, var(--prio-2) 20%, transparent);color:var(--prio-3);}
-.pill-prio-yuksek{background:color-mix(in srgb, var(--prio-3) 22%, transparent);color:var(--prio-3);}
-.pill-prio-acil{background:color-mix(in srgb, var(--prio-4) 24%, transparent);color:var(--prio-4);}
 .pill-good{background:var(--good-soft);color:var(--good);}
 .pill-warn{background:var(--warn-soft);color:var(--warn);}
 .pill-crit{background:var(--crit-soft);color:var(--crit);}
@@ -339,7 +332,7 @@ td.nowrap{white-space:nowrap;}
 .inline-select{width:auto;min-width:84px;padding:4px 8px;font-size:12.5px;}
 
 /* ===== Kanban ===== */
-.kanban{display:grid;grid-template-columns:repeat(5,minmax(220px,1fr));gap:12px;overflow-x:auto;padding-bottom:8px;}
+.kanban{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:12px;overflow-x:auto;padding-bottom:8px;}
 .kanban-col{background:var(--surface-2);border-radius:var(--radius-md);padding:10px;min-width:220px;}
 .kanban-col-head{display:flex;align-items:center;justify-content:space-between;padding:4px 6px 10px;}
 .kanban-col-head h4{font-size:12.5px;text-transform:uppercase;letter-spacing:0.03em;color:var(--text-secondary);}
@@ -421,6 +414,9 @@ td.nowrap{white-space:nowrap;}
 .detail-item .di-label{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:3px;}
 .detail-item .di-value{font-size:13.5px;font-weight:600;}
 .detail-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px;flex-wrap:wrap;}
+.status-field{min-width:230px;margin-bottom:0;}
+.status-save{display:flex;gap:8px;align-items:center;}
+.status-save select{flex:1;min-width:0;}
 .detail-title{display:flex;flex-direction:column;gap:8px;}
 .detail-title h2{font-size:20px;}
 .tag-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}

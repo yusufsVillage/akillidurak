@@ -56,8 +56,15 @@ ID_RE = re.compile(r'^[A-Za-z0-9_.~:@+\-]{1,64}$')
 USERNAME_RE = re.compile(r'^[a-z0-9._-]{3,40}$')
 UPLOAD_NAME_RE = re.compile(r'^[A-Za-z0-9_\-]+\.(jpg|png|webp)$')
 
-TASK_TYPES = {'ariza', 'icerik', 'genel'}
-TASK_STATUSES = {'acik', 'atandi', 'islemde', 'cozuldu', 'kapandi'}
+TASK_TYPES = {'ekran_ariza', 'yazilim_ariza', 'altyapi'}
+OLD_TASK_TYPES = {'ariza': 'ekran_ariza', 'icerik': 'yazilim_ariza', 'genel': 'altyapi'}  # names before 2026-09-29
+TASK_DURATION = dt.timedelta(hours=48)  # every job's deadline, counted from when it is opened
+# Needed to open a job, and cannot be emptied later.
+REQUIRED_TASK_FIELDS = ('type', 'screenId', 'assignedTechnicianId', 'serviceDayType', 'description')
+SERVICE_DAYS = {'haftaici', 'haftasonu'}
+# A job is İşlemde from the moment it is opened until it is closed.
+TASK_STATUSES = {'islemde', 'kapandi'}
+OLD_TASK_STATUSES = {'acik': 'islemde', 'atandi': 'islemde', 'cozuldu': 'kapandi'}  # before 2026-09-29
 TASK_PRIORITIES = {'dusuk', 'orta', 'yuksek', 'acil'}
 ORG_TYPES = {'kurum', 'firma'}
 
@@ -395,6 +402,26 @@ def number_tasks(conn):
     log.info('is numarasi verildi: %s is', len(rows))
 
 
+def migrate_types_and_deadlines(conn):
+    """2026-09-29: job types renamed (Arıza → Ekran Arıza, İçerik → Yazılım Arıza, Genel → Altyapı İşi), only two
+    statuses left (Açık/Atandı/İşlemde → İşlemde, Çözüldü/Kapandı → Kapandı) and every job has a 48-hour deadline.
+    Open jobs without one get it once, counted from the update, so none turns overdue at that moment. Job history
+    keeps the statuses it was written with."""
+    for old, new in OLD_TASK_TYPES.items():
+        conn.execute('UPDATE [isler] SET [tur]=? WHERE [tur]=?', (new, old))
+    for old, new in OLD_TASK_STATUSES.items():
+        conn.execute('UPDATE [isler] SET [durum]=? WHERE [durum]=?', (new, old))
+    conn.execute("UPDATE [isler] SET [durum]='islemde' WHERE [durum] IS NULL OR [durum]=''")
+    if conn.execute("SELECT 1 FROM [ayarlar] WHERE [anahtar]='sure_48'").fetchone():
+        return
+    now = dt.datetime.now(dt.timezone.utc)
+    n = conn.execute("UPDATE [isler] SET [son_tarih]=? WHERE [son_tarih] IS NULL AND [durum] <> 'kapandi'",
+                     (iso(now + TASK_DURATION),)).rowcount
+    conn.execute("INSERT OR REPLACE INTO [ayarlar] ([anahtar],[deger]) VALUES ('sure_48', ?)", (iso(now),))
+    if n:
+        log.info('48 saat son tarih verildi: %s acik is', n)
+
+
 def init_db():
     os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -410,6 +437,7 @@ def init_db():
             ensure_admin(conn)
             migrate_technicians(conn)
             number_tasks(conn)
+            migrate_types_and_deadlines(conn)
             conn.execute('COMMIT')
         except BaseException:
             conn.execute('ROLLBACK')
@@ -824,14 +852,37 @@ def get_collection(name):
 
 
 def check_task_rules(conn, rid, body, row):
-    """- a task tied to a screen needs before and after photos to become cozuldu/kapandi
-       - once its deadline has passed, the deadline only moves through /extend (with an excuse)"""
-    for key, allowed in (('type', TASK_TYPES), ('status', TASK_STATUSES), ('priority', TASK_PRIORITIES)):
+    """- type, screen, technician, service day and description are required
+       - a new job starts as İşlemde; a job tied to a screen needs before and after photos to be closed
+       - the deadline is set when the job is opened; afterwards it moves only through /extend (with an excuse)"""
+    # A page still open from before the 2026-09-29 renames may send the old names.
+    if body.get('type') in OLD_TASK_TYPES:
+        body['type'] = OLD_TASK_TYPES[body['type']]
+    if body.get('status') in OLD_TASK_STATUSES:
+        body['status'] = OLD_TASK_STATUSES[body['status']]
+    if row is None:
+        body['status'] = 'islemde'
+        body['resolvedAt'] = None
+    def blank(key):
+        return not str(body.get(key) or '').strip()
+
+    if row is None and any(blank(k) for k in REQUIRED_TASK_FIELDS):
+        raise ApiError(400, 'required_fields')
+    if row is not None and any(k in body and blank(k) for k in REQUIRED_TASK_FIELDS):
+        raise ApiError(400, 'required_fields')
+    for key, allowed in (('type', TASK_TYPES), ('status', TASK_STATUSES), ('priority', TASK_PRIORITIES),
+                         ('serviceDayType', SERVICE_DAYS)):
         if body.get(key) is not None and body[key] not in allowed:
             raise ApiError(400, 'bad_value')
+    if body.get('screenId') and not conn.execute('SELECT 1 FROM [ekranlar] WHERE [id]=?', (str(body['screenId']),)).fetchone():
+        raise ApiError(400, 'bad_value')
     assignee = body.get('assignedTechnicianId')
-    if assignee and not conn.execute('SELECT 1 FROM [kullanicilar] WHERE [id]=?', (str(assignee),)).fetchone():
-        raise ApiError(400, 'bad_assignee')
+    if assignee:
+        person = conn.execute('SELECT [aktif] FROM [kullanicilar] WHERE [id]=?', (str(assignee),)).fetchone()
+        current = row['teknisyen_id'] if row else None
+        # A deactivated user may stay on the jobs they had, but gets no new ones.
+        if not person or (assignee != current and not person['aktif']):
+            raise ApiError(400, 'bad_assignee')
     old_status = row['durum'] if row else None
     new_status = body.get('status', old_status)
     old_screen = row['ekran_id'] if row else None
@@ -844,10 +895,10 @@ def check_task_rules(conn, rid, body, row):
         kinds = {r[0] for r in conn.execute('SELECT DISTINCT [tur] FROM [is_fotograflari] WHERE [is_id]=?', (rid,))}
         if not {'once', 'sonra'} <= kinds:
             raise ApiError(409, 'photos_required')
-    if row and 'dueDate' in body:
-        stored = row['son_tarih']
-        if stored and (body['dueDate'] or None) != stored and is_past(stored):
-            raise ApiError(409, 'due_locked')
+    # Every job gets TASK_DURATION when it is opened; afterwards the deadline moves only through /extend,
+    # which needs an excuse (and only once it has passed).
+    if row and 'dueDate' in body and (body['dueDate'] or None) != row['son_tarih']:
+        raise ApiError(409, 'due_fixed')
 
 
 MAX_MATERIAL_QTY = 100000
@@ -886,6 +937,7 @@ def append_task_history(conn, rid, entries):
         ts = to_db(h.get('ts'), 'date') or now_iso()
         note = to_db(h.get('note'), 'memo')
         status = h.get('status') or None
+        status = OLD_TASK_STATUSES.get(status, status)
         if status is not None and status not in TASK_STATUSES:
             raise ApiError(400, 'bad_value')
         key = ts + '|' + (note or '')
@@ -954,6 +1006,9 @@ def collection_record(col, rid):
             if col == 'tasks':
                 # Next job number, taken inside this write transaction so two new jobs cannot share it.
                 conn.execute('UPDATE [isler] SET [is_no]=(SELECT COALESCE(MAX([is_no]), 0) + 1 FROM [isler]) WHERE [id]=?', (rid,))
+                # The deadline is set here, whatever the page sent.
+                conn.execute('UPDATE [isler] SET [son_tarih]=? WHERE [id]=?',
+                             (iso(dt.datetime.now(dt.timezone.utc) + TASK_DURATION), rid))
                 set_task_materials(conn, rid, body.get('usedMaterials') or [])
                 append_task_history(conn, rid, body.get('history') or [])
                 remember_near_due(conn, rid)
@@ -982,13 +1037,9 @@ def collection_record(col, rid):
 
 
 def status_event(old, new):
-    """Which status change is announced: entering çözüldü or kapandı, or reopening a closed job."""
-    if new == old:
-        return None
-    if new == 'kapandi':
+    """Which status change is announced: closing a job, or taking a closed one back into work."""
+    if is_closed(new) and not is_closed(old):
         return 'kapandi'
-    if new == 'cozuldu' and not is_closed(old):
-        return 'cozuldu'
     if is_closed(old) and not is_closed(new):
         return 'yeniden_acildi'
     return None
@@ -1128,8 +1179,7 @@ try:
 except Exception:  # no time zone database (Windows without tzdata); Turkey is UTC+3 all year
     LOCAL_TZ = dt.timezone(dt.timedelta(hours=3))
 
-TYPE_TEXT = {'ariza': ('🔧', 'Arıza'), 'icerik': ('🖼', 'İçerik'), 'genel': ('📋', 'Genel')}
-PRIORITY_TEXT = {'dusuk': '⚪ Düşük', 'orta': '🟡 Orta', 'yuksek': '🟠 Yüksek', 'acil': '🔴 Acil'}
+TYPE_TEXT = {'ekran_ariza': ('🖥', 'Ekran Arıza'), 'yazilim_ariza': ('💻', 'Yazılım Arıza'), 'altyapi': ('🏗', 'Altyapı İşi')}
 STATUS_TEXT = {'acik': 'Açık', 'atandi': 'Atandı', 'islemde': 'İşlemde', 'cozuldu': 'Çözüldü', 'kapandi': 'Kapandı'}
 
 
@@ -1226,9 +1276,9 @@ def build_message(conn, event, task_id, actor='', base_url='', extra=None):
     extra = extra or {}
     heads = {
         'yeni': f'🆕 <b>Yeni iş {no}</b>',
-        'cozuldu': f'✅ <b>İş {no} çözüldü</b>',
+        'cozuldu': f'✅ <b>İş {no} çözüldü</b>',  # only for messages queued before 2026-09-29
         'kapandi': f'🔒 <b>İş {no} kapatıldı</b>',
-        'yeniden_acildi': f'↩️ <b>İş {no} yeniden açıldı</b>',
+        'yeniden_acildi': f'↩️ <b>İş {no} yeniden işleme alındı</b>',
         'sure_24': f'⏳ <b>İş {no}: süre dolmak üzere</b>',
         'sure_doldu': f'⚠️ <b>İş {no}: süre doldu</b>',
         'uzatildi': f'🗓 <b>İş {no}: süre uzatıldı</b>',
@@ -1242,22 +1292,23 @@ def build_message(conn, event, task_id, actor='', base_url='', extra=None):
     else:
         lines.append('📍 Ekran seçilmedi')
     icon, type_name = TYPE_TEXT.get(t['tur'], ('📋', t['tur'] or '—'))
-    lines.append(f"{icon} {_e(t['baslik'])}")
+    # Jobs have no title any more (older ones may); the description says what the job is.
+    lines.append(f"{icon} <b>{_e(type_name)}</b>" + (f" · {_e(t['baslik'])}" if t['baslik'] else ''))
+    if t['aciklama']:
+        lines.append(f"📝 {_e(_short(t['aciklama'], 300 if event == 'yeni' else 120))}")
     who = f'👷 {_e(tech)}' if tech else '👷 Teknisyen atanmadı'
     state_line = f"📌 Durum: {STATUS_TEXT.get(t['durum'], t['durum'] or '—')} · {who}"
 
     if event == 'yeni':
-        lines.append(f"Tür: {type_name} · Öncelik: {PRIORITY_TEXT.get(t['oncelik'], t['oncelik'] or '—')}")
-        lines.append(who)
+        service = {'haftaici': 'Hafta içi', 'haftasonu': 'Hafta sonu'}.get(t['servis_gunu'])
+        lines.append(who + (f' · 📅 {service}' if service else ''))
         if due:
             left = (due - now).total_seconds()
             lines.append(f"⏰ Son tarih: {local_time(due)} ({span_text(left)} {'kaldı' if left > 0 else 'gecikti'})")
-        if t['aciklama']:
-            lines.append(f"📝 {_e(_short(t['aciklama']))}")
         lines.append(f'✍️ Açan: {_e(actor)}')
     elif event in ('cozuldu', 'kapandi'):
         created, resolved = parse_iso(t['olusturma']), parse_iso(t['cozulme']) or now
-        lines.append(who + (f' · ⏱ Çözüm süresi: {span_text((resolved - created).total_seconds())}' if created else ''))
+        lines.append(who + (f' · ⏱ Süre: {span_text((resolved - created).total_seconds())}' if created else ''))
         mats = conn.execute('SELECT m.[ad], m.[birim], im.[miktar] FROM [is_malzemeleri] AS im '
                             'LEFT JOIN [malzemeler] AS m ON m.[id] = im.[malzeme_id] WHERE im.[is_id]=? ORDER BY im.[id]',
                             (task_id,)).fetchall()
@@ -1268,7 +1319,7 @@ def build_message(conn, event, task_id, actor='', base_url='', extra=None):
         lines.append(f"✍️ {'Çözen' if event == 'cozuldu' else 'Kapatan'}: {_e(actor)}")
     elif event == 'yeniden_acildi':
         lines.append(state_line)
-        lines.append(f'✍️ Açan: {_e(actor)}')
+        lines.append(f'✍️ İşleme alan: {_e(actor)}')
     elif event == 'sure_24' and due:
         lines.append(f'⏰ Son tarih: {local_time(due)} — <b>{span_text((due - now).total_seconds())} kaldı</b>')
         lines.append(state_line)

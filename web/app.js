@@ -1,9 +1,19 @@
 /* ======================= Constants ======================= */
-const TASK_TYPES = { ariza: 'Arıza', icerik: 'İçerik', genel: 'Genel' };
-const TASK_STATUSES = ['acik', 'atandi', 'islemde', 'cozuldu', 'kapandi'];
-const STATUS_LABELS = { acik: 'Açık', atandi: 'Atandı', islemde: 'İşlemde', cozuldu: 'Çözüldü', kapandi: 'Kapandı' };
-const PRIORITIES = ['dusuk', 'orta', 'yuksek', 'acil'];
-const PRIORITY_LABELS = { dusuk: 'Düşük', orta: 'Orta', yuksek: 'Yüksek', acil: 'Acil' };
+const TASK_TYPES = { ekran_ariza: 'Ekran Arıza', yazilim_ariza: 'Yazılım Arıza', altyapi: 'Altyapı İşi' };
+// Both fault types count as "arıza" in fault statistics (most faulty screens, map, screen history).
+const FAULT_TYPES = ['ekran_ariza', 'yazilim_ariza'];
+function isFault(t) { return FAULT_TYPES.includes(t.type); }
+// Filter choices: every fault, or one type.
+const TYPE_FILTERS = { fault: 'Tüm arızalar', ...TASK_TYPES };
+function matchesTypeFilter(t, filter) { return !filter || (filter === 'fault' ? isFault(t) : t.type === filter); }
+const SERVICE_DAYS = { haftaici: 'Hafta İçi', haftasonu: 'Hafta Sonu' };
+const TASK_DURATION_HOURS = 48; // set by the server when a job is opened
+// A job is İşlemde from the moment it is opened until it is closed.
+const TASK_STATUSES = ['islemde', 'kapandi'];
+const STATUS_LABELS = { islemde: 'İşlemde', kapandi: 'Kapandı' };
+// Older history entries may carry the statuses used before 2026-09-29.
+const OLD_STATUS_LABELS = { acik: 'Açık', atandi: 'Atandı', cozuldu: 'Çözüldü' };
+function statusLabel(s) { return STATUS_LABELS[s] || OLD_STATUS_LABELS[s] || s; }
 const SCREEN_STATUS_LABELS = { aktif: 'Aktif', arizali: 'Arızalı', bakimda: 'Bakımda', pasif: 'Pasif' };
 const ROUTE_TITLES = { panel: 'Panel', tasks: 'İşler', screens: 'Ekranlar', map: 'Harita', materials: 'Malzeme Kataloğu', reports: 'Raporlar', users: 'Kullanıcılar', taskDetail: 'İş Detayı', screenDetail: 'Ekran Geçmişi' };
 const ORG_TYPE_LABELS = { kurum: 'Kurum çalışanı', firma: 'Firma çalışanı' };
@@ -40,10 +50,18 @@ function humanDuration(ms) {
   return Math.round(h / 24) + ' gün';
 }
 
-function isClosedStatus(s) { return s === 'cozuldu' || s === 'kapandi'; }
+function isClosedStatus(s) { return s === 'kapandi'; }
 // Job number given by the server (#1, #2, …); the same number is used in Telegram messages.
 function taskNo(t) { return t && t.no ? '#' + t.no : ''; }
 function taskNoHtml(t) { return t && t.no ? `<span class="task-no">#${t.no}</span> ` : ''; }
+// Jobs have no title: the type names them, the description says what is to be done (older jobs may have a title).
+function taskHeadline(t) { return [TASK_TYPES[t.type] || t.type, t.title].filter(Boolean).join(' · '); }
+// Full text of a job for exports: its description (older jobs: title and description).
+function taskText(t) { return [t.title, t.description].filter(Boolean).join(' — ').replace(/\s+/g, ' ').trim(); }
+function taskSummary(t, max = 90) {
+  const text = (t.description || t.title || '').split('\n')[0].trim();
+  return text.length > max ? text.slice(0, max - 1) + '…' : text;
+}
 function dueState(t) {
   if (!t.dueDate || isClosedStatus(t.status)) return null;
   const diff = new Date(t.dueDate) - Date.now();
@@ -61,13 +79,14 @@ function duePill(t) {
 }
 
 function hasBothPhotos(t) { const kinds = new Set((t.photos || []).map(p => p.kind)); return kinds.has('once') && kinds.has('sonra'); }
-// A task tied to a screen needs before/after photos to become çözüldü/kapandı (the server enforces this too).
+// A task tied to a screen needs before/after photos to be closed (the server enforces this too).
 function needsCompletionPhotos(t, newStatus) { return !isClosedStatus(t.status) && isClosedStatus(newStatus) && !!t.screenId && !hasBothPhotos(t); }
 
 const API_ERRORS = {
-  photos_required: 'Ekrana bağlı işler, önce ve sonra fotoğrafı yüklenmeden çözüldü/kapandı yapılamaz.',
-  due_locked: 'Süresi geçmiş işin son tarihi yalnızca mazeret gösterilerek uzatılabilir.',
-  not_overdue: 'Bu işin süresi henüz dolmadı; son tarihi Düzenle ile değiştirebilirsiniz.',
+  photos_required: 'İş, önce ve sonra fotoğrafı yüklenmeden kapatılamaz.',
+  due_fixed: `Her işin süresi açıldığı andan itibaren ${TASK_DURATION_HOURS} saattir; süre dolunca mazeret gösterilerek uzatılabilir.`,
+  not_overdue: 'Bu işin süresi henüz dolmadı; süre dolunca mazeret gösterilerek uzatılabilir.',
+  required_fields: 'Tür, ekran, teknisyen, servis günü ve açıklama zorunludur.',
   reason_required: 'Süreyi uzatmak için mazeret yazmalısınız.',
   due_invalid: 'Yeni son tarih hem şimdiden hem de mevcut son tarihten sonra olmalı.',
   bad_image: 'Yalnızca JPEG, PNG veya WEBP fotoğraf yüklenebilir.',
@@ -155,9 +174,15 @@ function personById(id) { return id ? state.people.find(p => p.id === id) : null
 function personName(id) { return personById(id)?.fullName || ''; }
 function comparePeople(a, b) { return a.fullName.localeCompare(b.fullName, 'tr'); }
 // Choices for a job's technician: active users, plus the current one even if deactivated since.
+// Job fields are required: an empty value shows as an unselectable "Seçin…" (older jobs may still lack one).
+function placeholderOptionHtml(selected) { return selected ? '' : '<option value="" selected disabled>Seçin…</option>'; }
+function requiredOptionsHtml(labelMap, selected) { return placeholderOptionHtml(selected) + optionsHtml(labelMap, selected); }
+function screenOptionsHtml(sortedScreens, selectedId) {
+  return placeholderOptionHtml(selectedId) + sortedScreens.map(s => `<option value="${esc(s.id)}" ${selectedId === s.id ? 'selected' : ''}>${esc(screenLabel(s))}</option>`).join('');
+}
 function assigneeOptionsHtml(selectedId) {
   const people = state.people.filter(p => p.active || p.id === selectedId).sort(comparePeople);
-  return '<option value="">Atanmadı</option>' + people.map(p =>
+  return placeholderOptionHtml(selectedId) + people.map(p =>
     `<option value="${esc(p.id)}" ${p.id === selectedId ? 'selected' : ''}>${esc(p.fullName)}${p.isAdmin ? ' (yönetici)' : ''}${p.active ? '' : ' (pasif)'}</option>`).join('');
 }
 // Filters list everyone, so jobs of deactivated users can still be found.
@@ -344,21 +369,20 @@ function showToast(msg, type, ms = 2600) {
 }
 
 let pendingConfirm = null;
-function confirmModal(message, onYes, confirmLabel = 'Evet, Sil') {
+function confirmModal(message, onYes, confirmLabel = 'Evet, Sil', confirmClass = 'btn-danger') {
   openModal('Onay Gerekiyor', `<p>${esc(message)}</p>`, `
     <button class="btn btn-secondary" data-action="closeModal">Vazgeç</button>
-    <button class="btn btn-danger" data-action="confirmYes">${esc(confirmLabel)}</button>
+    <button class="btn ${confirmClass}" data-action="confirmYes">${esc(confirmLabel)}</button>
   `);
   pendingConfirm = onYes;
 }
 
 /* ======================= Pills / badges ======================= */
 function typePill(type) {
-  const cls = { ariza: 'pill-type-ariza', icerik: 'pill-type-icerik', genel: 'pill-type-genel' }[type] || 'pill-neutral';
+  const cls = { ekran_ariza: 'pill-type-ekran', yazilim_ariza: 'pill-type-yazilim', altyapi: 'pill-type-altyapi' }[type] || 'pill-neutral';
   return `<span class="pill ${cls}">${esc(TASK_TYPES[type] || type)}</span>`;
 }
 function statusPill(status) { return `<span class="pill pill-status-${esc(status)}">${esc(STATUS_LABELS[status] || status)}</span>`; }
-function prioPill(p) { return `<span class="pill pill-prio-${esc(p)}">${esc(PRIORITY_LABELS[p] || p)}</span>`; }
 function screenStatusPill(s) {
   const map = { aktif: 'pill-good', arizali: 'pill-crit', bakimda: 'pill-warn', pasif: 'pill-neutral' };
   return `<span class="pill ${map[s] || 'pill-neutral'}">${esc(SCREEN_STATUS_LABELS[s] || s)}</span>`;
@@ -372,6 +396,10 @@ function barRow(label, value, max, color, href) {
     <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}" title="${esc(label)}: ${value}"></div></div>
     <div class="bar-value">${value}</div>
   </div>`;
+}
+const TYPE_COLORS = { ekran_ariza: 'var(--cat-ariza)', yazilim_ariza: 'var(--cat-icerik)', altyapi: 'var(--cat-genel)' };
+function typeBarItems(counts) {
+  return Object.entries(TASK_TYPES).map(([key, label]) => ({ label, value: counts[key] || 0, color: TYPE_COLORS[key] }));
 }
 function barChart(items) {
   const max = Math.max(...items.map(i => i.value), 1);
@@ -416,51 +444,44 @@ function renderPanelPage(app, topbarActions) {
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 86400000);
   const openTasks = state.tasks.filter(t => t.status !== 'kapandi');
-  const acilOpen = openTasks.filter(t => t.priority === 'acil');
+  const dueSoon = state.tasks.filter(t => dueState(t)?.kind === 'soon');
   const overdue = state.tasks.filter(isOverdue);
   const resolvedThisWeek = state.tasks.filter(t => t.resolvedAt && new Date(t.resolvedAt) >= weekAgo);
   const arizaliScreens = state.screens.filter(s => s.status === 'arizali');
 
-  const typeCounts = { ariza: 0, icerik: 0, genel: 0 };
+  const typeCounts = Object.fromEntries(Object.keys(TASK_TYPES).map(k => [k, 0]));
   state.tasks.forEach(t => { if (typeCounts[t.type] !== undefined) typeCounts[t.type]++; });
-  const statusCounts = { acik: 0, atandi: 0, islemde: 0, cozuldu: 0, kapandi: 0 };
+  const statusCounts = Object.fromEntries(TASK_STATUSES.map(k => [k, 0]));
   state.tasks.forEach(t => { if (statusCounts[t.status] !== undefined) statusCounts[t.status]++; });
 
   const faultCounts = {};
-  state.tasks.filter(t => t.type === 'ariza' && t.screenId).forEach(t => { faultCounts[t.screenId] = (faultCounts[t.screenId] || 0) + 1; });
+  state.tasks.filter(t => isFault(t) && t.screenId).forEach(t => { faultCounts[t.screenId] = (faultCounts[t.screenId] || 0) + 1; });
   const topStops = Object.entries(faultCounts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([screenId, count]) => ({ id: screenId, name: screenLabel(screenById(screenId)), count }));
 
   const recentActivity = [];
-  state.tasks.forEach(t => (t.history || []).forEach(h => recentActivity.push({ ...h, taskId: t.id, taskTitle: [taskNo(t), t.title].filter(Boolean).join(' ') })));
+  state.tasks.forEach(t => (t.history || []).forEach(h => recentActivity.push({ ...h, taskId: t.id, taskTitle: [taskNo(t), taskHeadline(t)].filter(Boolean).join(' ') })));
   recentActivity.sort((a, b) => new Date(b.ts) - new Date(a.ts));
   const recent = recentActivity.slice(0, 8);
   const maxFault = Math.max(...topStops.map(x => x.count), 1);
 
   const content = `
     <div class="stat-grid">
-      <div class="stat-tile"><div class="stat-label">Açık İşler</div><div class="stat-value">${openTasks.length}</div><div class="stat-sub">kapatılmamış tüm işler</div></div>
-      <div class="stat-tile ${acilOpen.length ? 'accent-crit' : ''}"><div class="stat-label">Acil Öncelikli</div><div class="stat-value">${acilOpen.length}</div><div class="stat-sub">açık &amp; acil</div></div>
-      <a class="stat-tile stat-link ${overdue.length ? 'accent-crit' : ''}" href="#tasks" data-action="showOverdue"><div class="stat-label">Süresi Geçen</div><div class="stat-value">${overdue.length}</div><div class="stat-sub">son tarihi aşılmış açık iş</div></a>
-      <div class="stat-tile accent-good"><div class="stat-label">Bu Hafta Çözülen</div><div class="stat-value">${resolvedThisWeek.length}</div><div class="stat-sub">son 7 gün</div></div>
+      <div class="stat-tile"><div class="stat-label">İşlemdeki İşler</div><div class="stat-value">${openTasks.length}</div><div class="stat-sub">kapatılmamış tüm işler</div></div>
+      <a class="stat-tile stat-link ${dueSoon.length ? 'accent-warn' : ''}" href="#tasks" data-action="showDueSoon"><div class="stat-label">24 Saatte Dolacak</div><div class="stat-value">${dueSoon.length}</div><div class="stat-sub">süresi yaklaşan iş</div></a>
+      <a class="stat-tile stat-link ${overdue.length ? 'accent-crit' : ''}" href="#tasks" data-action="showOverdue"><div class="stat-label">Süresi Geçen</div><div class="stat-value">${overdue.length}</div><div class="stat-sub">son tarihi aşılmış iş</div></a>
+      <div class="stat-tile accent-good"><div class="stat-label">Bu Hafta Kapanan</div><div class="stat-value">${resolvedThisWeek.length}</div><div class="stat-sub">son 7 gün</div></div>
       <div class="stat-tile ${arizaliScreens.length ? 'accent-crit' : ''}"><div class="stat-label">Arızalı Ekran</div><div class="stat-value">${arizaliScreens.length}</div><div class="stat-sub">toplam ${state.screens.length} ekrandan</div></div>
     </div>
     <div class="panel-grid">
       <div>
         <div class="section-card">
           <h3>İş Türü Dağılımı</h3>
-          ${state.tasks.length ? barChart([
-            { label: 'Arıza', value: typeCounts.ariza, color: 'var(--cat-ariza)' },
-            { label: 'İçerik', value: typeCounts.icerik, color: 'var(--cat-icerik)' },
-            { label: 'Genel', value: typeCounts.genel, color: 'var(--cat-genel)' },
-          ]) : emptyStateHtml('Henüz iş kaydı yok.')}
+          ${state.tasks.length ? barChart(typeBarItems(typeCounts)) : emptyStateHtml('Henüz iş kaydı yok.')}
         </div>
         <div class="section-card">
           <h3>Durum Dağılımı</h3>
           ${state.tasks.length ? barChart([
-            { label: STATUS_LABELS.acik, value: statusCounts.acik, color: 'var(--status-1)' },
-            { label: STATUS_LABELS.atandi, value: statusCounts.atandi, color: 'var(--status-2)' },
             { label: STATUS_LABELS.islemde, value: statusCounts.islemde, color: 'var(--status-3)' },
-            { label: STATUS_LABELS.cozuldu, value: statusCounts.cozuldu, color: 'var(--status-4)' },
             { label: STATUS_LABELS.kapandi, value: statusCounts.kapandi, color: 'var(--status-5)' },
           ]) : emptyStateHtml('Henüz iş kaydı yok.')}
         </div>
@@ -477,7 +498,7 @@ function renderPanelPage(app, topbarActions) {
               <div class="timeline-dot"></div>
               <div class="timeline-body">
                 <div class="timeline-meta">${esc(r.author || 'Bilinmeyen')} · ${fmtDateTime(r.ts)} · <a href="#task-${r.taskId}">${esc(r.taskTitle)}</a></div>
-                <div class="timeline-note">${esc(r.note || (r.status ? 'Durum: ' + (STATUS_LABELS[r.status] || r.status) : ''))}</div>
+                <div class="timeline-note">${esc(r.note || (r.status ? 'Durum: ' + statusLabel(r.status) : ''))}</div>
               </div>
             </div>`).join('')}</div>` : emptyStateHtml('Henüz aktivite yok.')}
         </div>
@@ -487,21 +508,21 @@ function renderPanelPage(app, topbarActions) {
 }
 
 /* ======================= Tasks list / kanban ======================= */
-let taskFilters = { type: '', status: '', priority: '', bolge: '', technicianId: '', due: '', q: '' };
+const EMPTY_TASK_FILTERS = { type: '', status: '', bolge: '', technicianId: '', due: '', q: '' };
+let taskFilters = { ...EMPTY_TASK_FILTERS };
 let taskViewMode = 'list';
 
 function filteredTasks() {
   return state.tasks.filter(t => {
-    if (taskFilters.type && t.type !== taskFilters.type) return false;
+    if (!matchesTypeFilter(t, taskFilters.type)) return false;
     if (taskFilters.status && t.status !== taskFilters.status) return false;
-    if (taskFilters.priority && t.priority !== taskFilters.priority) return false;
     if (taskFilters.bolge && screenById(t.screenId)?.bolgeKod !== taskFilters.bolge) return false;
     if (taskFilters.technicianId && t.assignedTechnicianId !== taskFilters.technicianId) return false;
     if (taskFilters.due && dueState(t)?.kind !== taskFilters.due) return false;
     if (taskFilters.q) {
       const q = taskFilters.q.trim().toLocaleLowerCase('tr');
       const scr = screenById(t.screenId);
-      const hay = [taskNo(t), t.no, t.title, t.description, scr?.durakAdi, scr?.adres, scr?.durakNo].filter(Boolean).join(' ').toLocaleLowerCase('tr');
+      const hay = [taskNo(t), t.no, TASK_TYPES[t.type], t.title, t.description, scr?.durakAdi, scr?.adres, scr?.durakNo].filter(Boolean).join(' ').toLocaleLowerCase('tr');
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -513,10 +534,9 @@ function renderTasksPage(app, topbarActions) {
   const list = filteredTasks();
   const content = `
     <div class="filter-bar">
-      <input type="search" id="taskSearchInput" class="search-input" placeholder="Ara: iş no, başlık, açıklama, durak…" data-filter="q" value="${esc(taskFilters.q)}">
-      <select data-filter="type"><option value="">Tüm Türler</option>${optionsHtml(TASK_TYPES, taskFilters.type)}</select>
+      <input type="search" id="taskSearchInput" class="search-input" placeholder="Ara: iş no, açıklama, durak…" data-filter="q" value="${esc(taskFilters.q)}">
+      <select data-filter="type"><option value="">Tüm Türler</option>${optionsHtml(TYPE_FILTERS, taskFilters.type)}</select>
       <select data-filter="status"><option value="">Tüm Durumlar</option>${optionsHtml(STATUS_LABELS, taskFilters.status)}</select>
-      <select data-filter="priority"><option value="">Tüm Öncelikler</option>${optionsHtml(PRIORITY_LABELS, taskFilters.priority)}</select>
       <select data-filter="bolge"><option value="">Tüm Şeflikler</option>${distinctBolgeler().map(b => `<option value="${esc(b)}" ${taskFilters.bolge === b ? 'selected' : ''}>${esc(b)}</option>`).join('')}</select>
       <select data-filter="technicianId"><option value="">Tüm Teknisyenler</option>${peopleFilterOptionsHtml(taskFilters.technicianId)}</select>
       <select data-filter="due"><option value="">Tüm Süreler</option>${optionsHtml({ overdue: 'Süresi geçenler', soon: '24 saat içinde dolacaklar' }, taskFilters.due)}</select>
@@ -533,15 +553,14 @@ function renderTasksPage(app, topbarActions) {
 
 function tasksTableHtml(list) {
   return `<div class="table-wrap"><table>
-    <thead><tr><th>No</th><th>Başlık</th><th>Tür</th><th>Ekran</th><th>Öncelik</th><th>Durum</th><th>Son Tarih</th><th>Teknisyen</th><th>Oluşturma</th></tr></thead>
+    <thead><tr><th>No</th><th>Tür</th><th>Ekran</th><th>Açıklama</th><th>Durum</th><th>Son Tarih</th><th>Teknisyen</th><th>Oluşturma</th></tr></thead>
     <tbody>
       ${list.map(t => `
         <tr class="clickable" data-action="openTask" data-id="${t.id}">
           <td class="mono nowrap">${esc(taskNo(t) || '—')}</td>
-          <td>${esc(t.title)}</td>
           <td>${typePill(t.type)}</td>
           <td>${esc(screenLabel(screenById(t.screenId)))}</td>
-          <td>${prioPill(t.priority)}</td>
+          <td class="wrap-text">${esc(taskSummary(t) || '—')}</td>
           <td>${statusPill(t.status)}</td>
           <td class="nowrap">${duePill(t)}</td>
           <td>${esc(personName(t.assignedTechnicianId) || 'Atanmadı')}</td>
@@ -559,14 +578,19 @@ function tasksKanbanHtml(list) {
         <div class="kanban-cards">
           ${items.map(t => `
             <div class="kanban-card" draggable="true" data-id="${t.id}" data-action="openTask">
-              <div class="kanban-card-title">${taskNoHtml(t)}${esc(t.title)}</div>
-              <div class="kanban-card-meta">${typePill(t.type)} ${prioPill(t.priority)} ${dueState(t) ? duePill(t) : ''}</div>
-              <div class="kanban-card-meta">${esc(screenLabel(screenById(t.screenId)))}</div>
+              <div class="kanban-card-title">${taskNoHtml(t)}${esc(screenLabel(screenById(t.screenId)))}</div>
+              <div class="kanban-card-meta">${typePill(t.type)} ${dueState(t) ? duePill(t) : ''}</div>
+              ${taskSummary(t) ? `<div class="kanban-card-meta">${esc(taskSummary(t, 70))}</div>` : ''}
             </div>`).join('')}
         </div>
       </div>`;
     }).join('')}
   </div>`;
+}
+// The status picked on a job's page; it is saved only with the Kaydet button next to it (kept across redraws).
+let pendingStatus = null;
+function pendingStatusFor(task) {
+  return pendingStatus && pendingStatus.taskId === task.id && pendingStatus.status !== task.status ? pendingStatus.status : null;
 }
 async function updateTaskStatus(id, newStatus) {
   const task = state.tasks.find(t => t.id === id);
@@ -578,11 +602,16 @@ async function updateTaskStatus(id, newStatus) {
 async function applyTaskStatus(task, newStatus) {
   const id = task.id;
   const author = getViewerName();
-  const entry = { ts: new Date().toISOString(), status: newStatus, note: 'Durum güncellendi: ' + (STATUS_LABELS[newStatus] || newStatus), author };
+  const closing = isClosedStatus(newStatus);
+  const entry = { ts: new Date().toISOString(), status: newStatus, note: closing ? 'İş kapatıldı' : 'İş yeniden işleme alındı', author };
   const patch = { status: newStatus, updatedAt: new Date().toISOString(), history: [...(task.history || []), entry] };
-  if ((newStatus === 'cozuldu' || newStatus === 'kapandi') && !task.resolvedAt) patch.resolvedAt = new Date().toISOString();
-  if (newStatus !== 'cozuldu' && newStatus !== 'kapandi') patch.resolvedAt = task.resolvedAt || null;
-  try { await db.doc('tasks/' + id).update(patch); showToast('Durum güncellendi'); }
+  if (closing && !task.resolvedAt) patch.resolvedAt = new Date().toISOString();
+  if (!closing) patch.resolvedAt = null;
+  try {
+    await db.doc('tasks/' + id).update(patch);
+    if (pendingStatus?.taskId === id) pendingStatus = null;
+    showToast(closing ? 'İş kapatıldı' : 'İş yeniden işleme alındı');
+  }
   catch (e) { showToast(apiErrorText(e, 'Güncelleme başarısız'), 'error'); render(); }
 }
 
@@ -599,9 +628,10 @@ function renderTaskDetailPage(app, topbarActions, id) {
   const sortedScreens = [...state.screens].sort(compareScreens);
   const due = dueState(task);
   const extensions = task.extensions || [];
+  const pickedStatus = pendingStatusFor(task);
 
   const content = `
-    <div class="breadcrumb"><a href="#tasks">İşler</a> / ${esc([taskNo(task), task.title].filter(Boolean).join(' '))}</div>
+    <div class="breadcrumb"><a href="#tasks">İşler</a> / ${esc([taskNo(task), taskHeadline(task)].filter(Boolean).join(' '))}</div>
     ${due?.kind === 'overdue' ? `<div class="banner banner-crit">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
       <span>Bu işin süresi doldu: son tarih ${esc(fmtDateTime(task.dueDate))} (${esc(due.text)}). Uzatmak için mazeret gerekir.</span>
@@ -609,23 +639,26 @@ function renderTaskDetailPage(app, topbarActions, id) {
     </div>` : ''}
     <div class="detail-header">
       <div class="detail-title">
-        <h2>${taskNoHtml(task)}${esc(task.title)}</h2>
-        <div class="tag-row">${typePill(task.type)}${prioPill(task.priority)}${statusPill(task.status)}</div>
+        <h2>${taskNoHtml(task)}${esc(taskHeadline(task))}</h2>
+        <div class="tag-row">${typePill(task.type)}${statusPill(task.status)}</div>
       </div>
-      <div class="field" style="min-width:190px;margin-bottom:0;">
-        <label>Durum</label>
-        <select data-task-field="status" data-task-id="${task.id}">${optionsHtml(STATUS_LABELS, task.status)}</select>
+      <div class="field status-field">
+        <label for="taskStatusSelect">Durum</label>
+        <div class="status-save">
+          <select id="taskStatusSelect" data-status-pick data-task-id="${task.id}">${optionsHtml(STATUS_LABELS, pickedStatus || task.status)}</select>
+          <button class="btn btn-primary btn-sm" data-action="saveTaskStatus" data-task-id="${task.id}" ${pickedStatus ? '' : 'disabled'}>Kaydet</button>
+        </div>
       </div>
     </div>
 
     <div class="detail-grid">
       <div class="detail-item">
-        <div class="di-label">Ekran</div>
-        <select data-task-field="screenId" data-task-id="${task.id}"><option value="">—</option>${sortedScreens.map(s => `<option value="${s.id}" ${task.screenId === s.id ? 'selected' : ''}>${esc(screenLabel(s))}</option>`).join('')}</select>
+        <div class="di-label">Tür</div>
+        <select data-task-field="type" data-task-id="${task.id}">${requiredOptionsHtml(TASK_TYPES, task.type)}</select>
       </div>
       <div class="detail-item">
-        <div class="di-label">Öncelik</div>
-        <select data-task-field="priority" data-task-id="${task.id}">${optionsHtml(PRIORITY_LABELS, task.priority)}</select>
+        <div class="di-label">Ekran</div>
+        <select data-task-field="screenId" data-task-id="${task.id}">${screenOptionsHtml(sortedScreens, task.screenId)}</select>
       </div>
       <div class="detail-item">
         <div class="di-label">Teknisyen</div>
@@ -633,7 +666,7 @@ function renderTaskDetailPage(app, topbarActions, id) {
       </div>
       <div class="detail-item">
         <div class="di-label">Servis Günü</div>
-        <select data-task-field="serviceDayType" data-task-id="${task.id}"><option value="">—</option><option value="haftaici" ${task.serviceDayType === 'haftaici' ? 'selected' : ''}>Hafta İçi</option><option value="haftasonu" ${task.serviceDayType === 'haftasonu' ? 'selected' : ''}>Hafta Sonu</option></select>
+        <select data-task-field="serviceDayType" data-task-id="${task.id}">${requiredOptionsHtml(SERVICE_DAYS, task.serviceDayType)}</select>
       </div>
       <div class="detail-item">
         <div class="di-label">Son Tarih</div>
@@ -644,7 +677,7 @@ function renderTaskDetailPage(app, topbarActions, id) {
         <div class="di-value mono">${esc(fmtDateTime(task.createdAt))}</div>
       </div>
       <div class="detail-item">
-        <div class="di-label">Çözülme</div>
+        <div class="di-label">Kapanış</div>
         <div class="di-value mono">${task.resolvedAt ? esc(fmtDateTime(task.resolvedAt)) : '—'}</div>
       </div>
     </div>
@@ -658,7 +691,7 @@ function renderTaskDetailPage(app, topbarActions, id) {
 
     <div class="section-card">
       <h3>Ekran Fotoğrafları</h3>
-      ${task.screenId && !isClosedStatus(task.status) ? '<div class="section-sub">İşi çözüldü veya kapandı yapmak için önce ve sonra fotoğrafı gerekir.</div>' : ''}
+      ${task.screenId && !isClosedStatus(task.status) ? '<div class="section-sub">İşi kapatmak için önce ve sonra fotoğrafı gerekir.</div>' : ''}
       ${photoPanelHtml(task)}
     </div>
 
@@ -769,12 +802,9 @@ async function handleTaskFieldChange(taskId, field, value) {
   if (!db) return;
   const task = state.tasks.find(t => t.id === taskId);
   if (!task) return;
-  if (field === 'status') { updateTaskStatus(taskId, value); return; }
-  const patch = { updatedAt: new Date().toISOString() };
-  if (field === 'screenId') { patch.screenId = value || null; }
-  else if (field === 'assignedTechnicianId') { patch.assignedTechnicianId = value || null; }
-  else if (field === 'priority') { patch.priority = value; }
-  else if (field === 'serviceDayType') { patch.serviceDayType = value || null; }
+  if (!['type', 'screenId', 'assignedTechnicianId', 'serviceDayType'].includes(field)) return;
+  if (!value) { showToast(API_ERRORS.required_fields, 'error'); render(); return; }
+  const patch = { updatedAt: new Date().toISOString(), [field]: value };
   try { await db.doc('tasks/' + taskId).update(patch); showToast('Kaydedildi'); }
   catch (e) { showToast(apiErrorText(e, 'Kaydedilemedi'), 'error'); render(); }
 }
@@ -916,12 +946,12 @@ async function removePhoto(photoId) {
   } catch (e) { showToast(apiErrorText(e, 'Silinemedi'), 'error'); }
 }
 
-// Shown when a screen task moves to çözüldü/kapandı without both photo sets; the status changes once they exist.
+// Shown when a screen task is being closed without both photo sets; the status changes once they exist.
 let pendingComplete = null;
 function openCompleteModal(taskId, newStatus) {
   openModal('İşi Tamamla: Ekran Fotoğrafları', '<div id="completeModalBody"></div>', `
     <button class="btn btn-secondary" data-action="closeModal">Vazgeç</button>
-    <button class="btn btn-primary" data-action="confirmComplete" id="confirmCompleteBtn" disabled>Durumu "${esc(STATUS_LABELS[newStatus])}" yap</button>
+    <button class="btn btn-primary" data-action="confirmComplete" id="confirmCompleteBtn" disabled>Kaydet</button>
   `, { large: true });
   pendingComplete = { taskId, status: newStatus };
   refreshCompleteModal();
@@ -976,30 +1006,24 @@ async function saveExtendForm(form) {
 
 /* ======================= Task form modal ======================= */
 // preset: starting values for a new job, e.g. { screenId, type } when opened from a screen's page or the map.
+// Every field is required. The deadline is not entered: the server gives each job TASK_DURATION_HOURS from opening.
 function openTaskFormModal(taskId, preset = {}) {
   const task = taskId ? state.tasks.find(t => t.id === taskId) : null;
   const isEdit = !!task;
   const sortedScreens = [...state.screens].sort(compareScreens);
-  const dueLocked = !!task && isOverdue(task);
   const screenId = task ? task.screenId : preset.screenId;
   openModal(isEdit ? 'İşi Düzenle' : 'Yeni İş Oluştur', `
     <form id="taskFormInner" data-form="taskForm" data-task-id="${task?.id || ''}">
-      <div class="field"><label>Başlık</label><input name="title" required value="${esc(task?.title || '')}" placeholder="Örn. Ekran yanmıyor"></div>
+      <div class="field"><label for="taskFormType">Tür</label><select id="taskFormType" name="type" required>${requiredOptionsHtml(TASK_TYPES, task ? task.type : (preset.type || 'ekran_ariza'))}</select></div>
+      <div class="field"><label for="taskFormScreen">Ekran</label><select id="taskFormScreen" name="screenId" required>${screenOptionsHtml(sortedScreens, screenId)}</select></div>
       <div class="field-row">
-        <div class="field"><label>Tür</label><select name="type">${optionsHtml(TASK_TYPES, task?.type || preset.type || 'ariza')}</select></div>
-        <div class="field"><label>Öncelik</label><select name="priority">${optionsHtml(PRIORITY_LABELS, task?.priority || 'orta')}</select></div>
+        <div class="field"><label for="taskFormTech">Teknisyen</label><select id="taskFormTech" name="assignedTechnicianId" required>${assigneeOptionsHtml(task?.assignedTechnicianId)}</select></div>
+        <div class="field"><label for="taskFormDay">Servis Günü</label><select id="taskFormDay" name="serviceDayType" required>${requiredOptionsHtml(SERVICE_DAYS, task?.serviceDayType)}</select></div>
       </div>
-      <div class="field"><label>Ekran</label><select name="screenId"><option value="">—</option>${sortedScreens.map(s => `<option value="${s.id}" ${screenId === s.id ? 'selected' : ''}>${esc(screenLabel(s))}</option>`).join('')}</select></div>
-      <div class="field-row">
-        <div class="field"><label>Teknisyen</label><select name="assignedTechnicianId">${assigneeOptionsHtml(task?.assignedTechnicianId)}</select></div>
-        <div class="field"><label>Servis Günü</label><select name="serviceDayType"><option value="">—</option><option value="haftaici" ${task?.serviceDayType === 'haftaici' ? 'selected' : ''}>Hafta İçi</option><option value="haftasonu" ${task?.serviceDayType === 'haftasonu' ? 'selected' : ''}>Hafta Sonu</option></select></div>
-      </div>
-      <div class="field">
-        <label for="taskFormDue">Son tarih (zaman sınırı)</label>
-        <input type="datetime-local" id="taskFormDue" name="dueDate" value="${toLocalInput(task?.dueDate)}" ${dueLocked ? 'disabled' : ''}>
-        <div class="hint">${dueLocked ? 'Süre dolduğu için burada değiştirilemez. İş detayındaki "Süreyi Uzat" ile mazeret göstererek uzatın.' : 'Boş bırakılırsa işin zaman sınırı olmaz.'}</div>
-      </div>
-      <div class="field"><label>Açıklama</label><textarea name="description" rows="3" placeholder="Detayları yazın…">${esc(task?.description || '')}</textarea></div>
+      <div class="field"><label for="taskFormDesc">Açıklama</label><textarea id="taskFormDesc" name="description" rows="4" required placeholder="Ne yapılacak? Örn. ekran yanmıyor, güç kaynağı kontrol edilecek">${esc(task?.description || '')}</textarea></div>
+      <div class="hint">${isEdit
+        ? `Son tarih: <strong>${esc(fmtDateTime(task.dueDate))}</strong>. İşin süresi değiştirilemez; süre dolunca iş sayfasından mazeret gösterilerek uzatılabilir.`
+        : `Tüm alanlar zorunludur. İş "İşlemde" olarak açılır ve süresi ${TASK_DURATION_HOURS} saattir; son tarih kendiliğinden verilir.`}</div>
     </form>
   `, `
     <button class="btn btn-secondary" data-action="closeModal">Vazgeç</button>
@@ -1010,34 +1034,26 @@ async function saveTaskForm(form) {
   if (!db) { showToast('Veritabanı kullanılamıyor', 'error'); return; }
   const taskId = form.dataset.taskId;
   const fd = new FormData(form);
-  const title = (fd.get('title') || '').toString().trim();
-  if (!title) { showToast('Başlık gerekli', 'error'); return; }
+  const fields = {
+    type: fd.get('type') || '',
+    screenId: fd.get('screenId') || '',
+    assignedTechnicianId: fd.get('assignedTechnicianId') || '',
+    serviceDayType: fd.get('serviceDayType') || '',
+    description: (fd.get('description') || '').toString().trim(),
+  };
+  if (Object.values(fields).some(v => !v)) { showToast(API_ERRORS.required_fields, 'error'); return; }
   const now = new Date().toISOString();
   if (taskId) {
-    const patch = {
-      title, type: fd.get('type'), priority: fd.get('priority'),
-      screenId: fd.get('screenId') || null,
-      assignedTechnicianId: fd.get('assignedTechnicianId') || null,
-      serviceDayType: fd.get('serviceDayType') || null,
-      description: (fd.get('description') || '').toString(),
-      updatedAt: now,
-    };
-    // A disabled input is left out of FormData; only send the deadline when it was editable.
-    if (!form.elements.dueDate.disabled) patch.dueDate = fromLocalInput(fd.get('dueDate'));
-    try { await db.doc('tasks/' + taskId).update(patch); closeModal(); showToast('İş güncellendi'); }
+    try { await db.doc('tasks/' + taskId).update({ ...fields, updatedAt: now }); closeModal(); showToast('İş güncellendi'); }
     catch (e) { showToast(apiErrorText(e, 'Güncellenemedi'), 'error'); }
   } else {
     const id = uid('t');
+    // The server sets the status (İşlemde), the job number and the deadline.
     const doc = {
-      title, type: fd.get('type') || 'ariza', priority: fd.get('priority') || 'orta', status: 'acik',
-      screenId: fd.get('screenId') || null,
-      assignedTechnicianId: fd.get('assignedTechnicianId') || null,
-      serviceDayType: fd.get('serviceDayType') || null,
-      description: (fd.get('description') || '').toString(),
+      ...fields, status: 'islemde',
       usedMaterials: [],
-      history: [{ ts: now, status: 'acik', note: 'İş oluşturuldu', author: getViewerName() }],
+      history: [{ ts: now, status: 'islemde', note: 'İş oluşturuldu', author: getViewerName() }],
       createdAt: now, updatedAt: now, resolvedAt: null,
-      dueDate: fromLocalInput(fd.get('dueDate')),
     };
     try {
       await db.doc('tasks/' + id).set(doc);
@@ -1081,7 +1097,7 @@ function renderScreensPage(app, topbarActions) {
   const list = filteredScreens();
   const faultStats = new Map();
   state.tasks.forEach(t => {
-    if (t.type !== 'ariza' || !t.screenId) return;
+    if (!isFault(t) || !t.screenId) return;
     const st = faultStats.get(t.screenId) || { total: 0, open: 0 };
     st.total++;
     if (!isClosedStatus(t.status)) st.open++;
@@ -1090,7 +1106,7 @@ function renderScreensPage(app, topbarActions) {
   const faultCell = s => {
     const st = faultStats.get(s.id);
     if (!st) return '<span class="muted-inline">—</span>';
-    return `<a class="link" href="#screen-${esc(s.id)}">${st.total}</a>${st.open ? ` <span class="pill pill-crit">${st.open} açık</span>` : ''}`;
+    return `<a class="link" href="#screen-${esc(s.id)}">${st.total}</a>${st.open ? ` <span class="pill pill-crit">${st.open} işlemde</span>` : ''}`;
   };
   const content = `
     <div class="filter-bar">
@@ -1244,9 +1260,9 @@ function openTasksByScreen() {
   return byScreen;
 }
 // Marker colour: red = open fault (or screen marked arızalı), amber = other open job or bakımda, grey = pasif.
-const MARKER_KINDS = { crit: 'Açık arıza', warn: 'Açık iş / bakımda', ok: 'Sorunsuz', off: 'Pasif' };
+const MARKER_KINDS = { crit: 'Arızası var', warn: 'İşi var / bakımda', ok: 'Sorunsuz', off: 'Pasif' };
 function screenMarkerKind(s, openTasks) {
-  if (s.status === 'arizali' || openTasks.some(t => t.type === 'ariza')) return 'crit';
+  if (s.status === 'arizali' || openTasks.some(isFault)) return 'crit';
   if (s.status === 'bakimda' || openTasks.length) return 'warn';
   if (s.status === 'pasif') return 'off';
   return 'ok';
@@ -1495,7 +1511,7 @@ function screenPopupHtml(id) {
   const s = screenById(id);
   if (!s) return '';
   const tasks = state.tasks.filter(t => t.screenId === id);
-  const faults = tasks.filter(t => t.type === 'ariza');
+  const faults = tasks.filter(isFault);
   const open = tasks.filter(t => !isClosedStatus(t.status));
   const last = faults.map(t => t.createdAt).sort().pop();
   return `
@@ -1503,7 +1519,7 @@ function screenPopupHtml(id) {
     <div class="map-popup-title">${esc(s.durakAdi || s.adres || 'İsimsiz')}</div>
     <div class="map-popup-meta">#${esc(s.durakNo || '—')}${s.yon ? '-' + esc(s.yon) : ''} · ${esc(s.bolgeKod || 'şeflik yok')} · ${s.ekranTipi ? 'Tip ' + esc(s.ekranTipi) : 'tip yok'}</div>
     <div class="map-popup-stats">
-      <span><strong>${open.length}</strong> açık iş</span>
+      <span><strong>${open.length}</strong> iş işlemde</span>
       <span><strong>${faults.length}</strong> arıza</span>
       <span>son arıza: ${last ? esc(fmtDate(last)) : '—'}</span>
     </div>
@@ -1536,7 +1552,7 @@ function renderMapPage(app, topbarActions, focusId) {
     </div>
     <div class="map-legend">
       ${Object.entries(MARKER_KINDS).map(([k, label]) => `<button type="button" class="legend-chip ${mapFilters.kind === k ? 'active' : ''}" data-action="setMapKind" data-kind="${k}" title="Yalnızca bunları göster"><span class="legend-dot marker-${k}"></span>${label} <strong>${counts[k]}</strong></button>`).join('')}
-      <span class="hint" style="margin:0;">İşarete tıklayın: ekranın bilgileri, açık işleri ve geçmişi.</span>
+      <span class="hint" style="margin:0;">İşarete tıklayın: ekranın bilgileri, işlemdeki işleri ve geçmişi.</span>
     </div>
     <div id="mapSlot"></div>
     ${missing.length ? `<p class="map-missing">Konumu girilmemiş ${missing.length} ekran haritada yok: ${missing.map(({ s }) => isCompanyUser() ? esc(screenLabel(s)) : `<a href="#screen-${esc(s.id)}">${esc(screenLabel(s))}</a>`).join(', ')}.${isCompanyUser() ? '' : ' Konum, ekranın sayfasındaki Enlem / Boylam alanlarından eklenir.'}</p>` : ''}`;
@@ -1554,7 +1570,7 @@ function renderMapPage(app, topbarActions, focusId) {
 }
 
 /* ======================= Screen page: history of one screen ======================= */
-let screenHistoryType = 'ariza';
+let screenHistoryType = 'fault';
 let detailMap = null;
 let detailMapKey = null;
 
@@ -1565,14 +1581,15 @@ function renderScreenDetailPage(app, topbarActions, id) {
     <button class="btn btn-secondary" data-action="screenReport" data-id="${esc(s.id)}">Rapor Al</button>
     <button class="btn btn-primary" data-action="newTaskForScreen" data-id="${esc(s.id)}"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Yeni İş</button>`;
   const tasks = state.tasks.filter(t => t.screenId === s.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  const faults = tasks.filter(t => t.type === 'ariza');
+  const faults = tasks.filter(isFault);
   const open = tasks.filter(t => !isClosedStatus(t.status));
-  const openFaults = open.filter(t => t.type === 'ariza');
+  const openFaults = open.filter(isFault);
   const solved = faults.filter(t => t.resolvedAt);
   const avgDays = solved.length ? solved.reduce((sum, t) => sum + resolutionDays(t), 0) / solved.length : null;
-  const list = screenHistoryType ? tasks.filter(t => t.type === screenHistoryType) : tasks;
+  const list = tasks.filter(t => matchesTypeFilter(t, screenHistoryType));
   const mats = materialReport(list);
-  const typeTabs = [['ariza', 'Arıza'], ['', 'Tümü'], ['icerik', 'İçerik'], ['genel', 'Genel']];
+  const typeTabs = [['fault', 'Arızalar'], ['', 'Tümü'], ...Object.entries(TASK_TYPES)];
+  const listName = screenHistoryType ? TYPE_FILTERS[screenHistoryType] : 'tüm işler';
 
   const content = `
     <div class="print-only print-head"><strong>Akıllı Durak Takip — Ekran Geçmişi</strong><span>${esc(screenLabel(s))}</span><span>Oluşturma: ${esc(fmtDateTime(new Date().toISOString()))}</span></div>
@@ -1592,9 +1609,9 @@ function renderScreenDetailPage(app, topbarActions, id) {
     </div>
     <div class="stat-grid">
       <div class="stat-tile ${faults.length ? 'accent-crit' : ''}"><div class="stat-label">Toplam Arıza</div><div class="stat-value">${faults.length}</div><div class="stat-sub">toplam ${tasks.length} iş</div></div>
-      <div class="stat-tile ${openFaults.length ? 'accent-crit' : open.length ? 'accent-warn' : ''}"><div class="stat-label">Açık İş</div><div class="stat-value">${open.length}</div><div class="stat-sub">${openFaults.length} açık arıza</div></div>
-      <div class="stat-tile"><div class="stat-label">Son Arıza</div><div class="stat-value" style="font-size:20px;">${faults.length ? esc(fmtDate(faults[0].createdAt)) : '—'}</div><div class="stat-sub">${faults.length ? esc(faults[0].title) : 'kayıt yok'}</div></div>
-      <div class="stat-tile"><div class="stat-label">Ort. Çözüm Süresi</div><div class="stat-value" style="font-size:20px;">${fmtDays(avgDays)}</div><div class="stat-sub">${solved.length} çözülen arıza</div></div>
+      <div class="stat-tile ${openFaults.length ? 'accent-crit' : open.length ? 'accent-warn' : ''}"><div class="stat-label">İşlemdeki İş</div><div class="stat-value">${open.length}</div><div class="stat-sub">${openFaults.length} arıza işlemde</div></div>
+      <div class="stat-tile"><div class="stat-label">Son Arıza</div><div class="stat-value" style="font-size:20px;">${faults.length ? esc(fmtDate(faults[0].createdAt)) : '—'}</div><div class="stat-sub">${faults.length ? esc(taskSummary(faults[0], 40) || TASK_TYPES[faults[0].type]) : 'kayıt yok'}</div></div>
+      <div class="stat-tile"><div class="stat-label">Ort. Kapanış Süresi</div><div class="stat-value" style="font-size:20px;">${fmtDays(avgDays)}</div><div class="stat-sub">${solved.length} kapanan arıza</div></div>
       <div class="stat-tile"><div class="stat-label">Kullanılan Kalem</div><div class="stat-value">${mats.length}</div><div class="stat-sub">farklı malzeme / işlem</div></div>
     </div>
 
@@ -1604,10 +1621,10 @@ function renderScreenDetailPage(app, topbarActions, id) {
         <div class="view-toggle">${typeTabs.map(([v, label]) => `<button type="button" class="${screenHistoryType === v ? 'active' : ''}" data-action="setScreenHistoryType" data-type="${v}">${label}</button>`).join('')}</div>
       </div>
       ${list.length ? `<div class="table-wrap"><table>
-        <thead><tr><th>Tarih</th><th>İş</th><th>Tür</th><th>Durum</th><th>Teknisyen</th><th>Kullanılan Malzeme / İşlem</th><th>Çözülme</th><th>Süre</th></tr></thead>
+        <thead><tr><th>Tarih</th><th>İş</th><th>Tür</th><th>Durum</th><th>Teknisyen</th><th>Kullanılan Malzeme / İşlem</th><th>Kapanış</th><th>Süre</th></tr></thead>
         <tbody>${list.map(t => `<tr class="clickable" data-action="openTask" data-id="${t.id}">
           <td class="mono nowrap">${esc(fmtDate(t.createdAt))}</td>
-          <td>${taskNoHtml(t)}${esc(t.title)}</td>
+          <td class="wrap-text">${taskNoHtml(t)}${esc(taskSummary(t, 60) || '—')}</td>
           <td>${typePill(t.type)}</td>
           <td>${statusPill(t.status)}</td>
           <td>${esc(personName(t.assignedTechnicianId) || '—')}</td>
@@ -1615,13 +1632,13 @@ function renderScreenDetailPage(app, topbarActions, id) {
           <td class="mono nowrap">${t.resolvedAt ? esc(fmtDate(t.resolvedAt)) : '—'}</td>
           <td class="nowrap">${fmtDays(resolutionDays(t))}</td>
         </tr>`).join('')}</tbody>
-      </table></div>` : emptyStateHtml(screenHistoryType ? `Bu ekranda ${TASK_TYPES[screenHistoryType].toLocaleLowerCase('tr')} kaydı yok.` : 'Bu ekranda henüz iş kaydı yok.')}
+      </table></div>` : emptyStateHtml(screenHistoryType ? `Bu ekranda ${listName.toLocaleLowerCase('tr')} kaydı yok.` : 'Bu ekranda henüz iş kaydı yok.')}
     </div>
 
     <div class="panel-grid">
       <div class="section-card">
         <h3>Kullanılan Malzemeler / İşlemler</h3>
-        <div class="section-sub">Yukarıdaki listede (${screenHistoryType ? TASK_TYPES[screenHistoryType] : 'tüm işler'}) kullanılanlar</div>
+        <div class="section-sub">Yukarıdaki listede (${listName}) kullanılanlar</div>
         ${mats.length ? `<div class="table-wrap"><table class="compact-table">
           <thead><tr><th>Malzeme / İşlem</th><th>Birim</th><th class="num">Toplam</th><th class="num">İş</th></tr></thead>
           <tbody>${mats.map(m => `<tr><td>${esc(m.name)}</td><td>${esc(m.unit)}</td><td class="num">${fmtQty(m.qty)}</td><td class="num">${m.taskCount}</td></tr>`).join('')}</tbody>
@@ -1724,7 +1741,7 @@ function renderUsersPage(app, topbarActions) {
   const content = `
     <p class="page-lead">Sistem yöneticisi dışındaki kullanıcılar teknisyendir; işler bu listedeki kişilere atanır. Kullanıcı ekleme, düzenleme ve şifre sıfırlama yalnızca sistem yöneticisine açıktır; teknisyenler sistemin geri kalanını tam yetkiyle kullanır. Yeni kullanıcıya rastgele bir geçici şifre verilir ve yalnızca bir kez gösterilir; kullanıcı ilk girişinde kendi şifresini belirler. Şifresini unutan kullanıcı için "Şifreyi Sıfırla" kullanın.</p>
     ${!users.length ? emptyStateHtml('Kullanıcı yok.') : `<div class="table-wrap"><table>
-      <thead><tr><th>Ad Soyad</th><th>Kullanıcı Adı</th><th>Çalışan Türü</th><th>Yetki</th><th class="num">Açık İş</th><th>Durum</th><th>Son Giriş</th><th></th></tr></thead>
+      <thead><tr><th>Ad Soyad</th><th>Kullanıcı Adı</th><th>Çalışan Türü</th><th>Yetki</th><th class="num">İşlemdeki İş</th><th>Durum</th><th>Son Giriş</th><th></th></tr></thead>
       <tbody>${users.map(u => `<tr>
         <td>${esc(u.fullName)}${u.id === currentUser.id ? ' <span class="muted-inline">(siz)</span>' : ''}</td>
         <td class="mono">${esc(u.username)}</td>
@@ -1747,7 +1764,7 @@ function renderUsersPage(app, topbarActions) {
 /* ======================= Telegram notifications (administrator) ======================= */
 // The bot token and group id live in the WSGI file (secrets stay out of the app); this card shows whether they are
 // set, sends a test message, finds the group's chat id, and lists the latest notifications.
-const TELEGRAM_EVENTS = { yeni: 'Yeni iş', cozuldu: 'Çözüldü', kapandi: 'Kapatıldı', yeniden_acildi: 'Yeniden açıldı', sure_24: '24 saat kaldı', sure_doldu: 'Süre doldu', uzatildi: 'Süre uzatıldı', silindi: 'Silindi' };
+const TELEGRAM_EVENTS = { yeni: 'Yeni iş', cozuldu: 'Çözüldü', kapandi: 'Kapatıldı', yeniden_acildi: 'Yeniden işleme alındı', sure_24: '24 saat kaldı', sure_doldu: 'Süre doldu', uzatildi: 'Süre uzatıldı', silindi: 'Silindi' };
 let telegramInfo = null;
 let telegramInfoAt = 0;
 function loadTelegramInfo(force) {
@@ -1776,7 +1793,7 @@ function telegramCardHtml() {
     </div>
     ${!info ? '<p class="muted-text">Yükleniyor…</p>' : `
       <div class="tag-row" style="margin-bottom:10px;">Bot anahtarı ${flag(info.tokenSet, 'tanımlı', 'tanımlı değil')} · Grup ${flag(info.chatSet, 'tanımlı', 'tanımlı değil')}</div>
-      <p class="hint" style="margin:0 0 12px;">Gönderilenler: yeni iş, çözüldü, kapatıldı, yeniden açıldı, süreye 24 saat kala, süre doldu, süre uzatıldı, iş silindi. Her mesajda iş numarası ve durak adı, silinmemiş işlerde işin bağlantısı olur. ${ready ? '' : 'Kurulum: README > Telegram bildirimleri (bot anahtarı ve grup kimliği PythonAnywhere WSGI dosyasına yazılır).'}</p>
+      <p class="hint" style="margin:0 0 12px;">Gönderilenler: yeni iş, kapatıldı, yeniden işleme alındı, süreye 24 saat kala, süre doldu, süre uzatıldı, iş silindi. Her mesajda iş numarası ve durak adı, silinmemiş işlerde işin bağlantısı olur. ${ready ? '' : 'Kurulum: README > Telegram bildirimleri (bot anahtarı ve grup kimliği PythonAnywhere WSGI dosyasına yazılır).'}</p>
       ${info.recent.length ? `<div class="table-wrap"><table class="compact-table">
         <thead><tr><th>Zaman</th><th>Olay</th><th>İş</th><th>Durum</th></tr></thead>
         <tbody>${info.recent.map(n => `<tr>
@@ -2079,7 +2096,7 @@ function filteredReportTasks() {
   const start = reportFilters.start ? new Date(reportFilters.start + 'T00:00:00') : null;
   const end = reportFilters.end ? new Date(reportFilters.end + 'T23:59:59.999') : null;
   return state.tasks.filter(t => {
-    if (reportFilters.type && t.type !== reportFilters.type) return false;
+    if (!matchesTypeFilter(t, reportFilters.type)) return false;
     if (reportFilters.bolge && screenById(t.screenId)?.bolgeKod !== reportFilters.bolge) return false;
     if (reportFilters.screenId && t.screenId !== reportFilters.screenId) return false;
     if (reportFilters.technicianId && t.assignedTechnicianId !== reportFilters.technicianId) return false;
@@ -2115,9 +2132,9 @@ function reportSummaryText(tasks) {
   const f = reportFilters;
   const day = v => fmtDate(v + 'T00:00:00');
   const parts = [f.start || f.end
-    ? `${f.start ? day(f.start) : 'başlangıç yok'} – ${f.end ? day(f.end) : 'bugün'} (${f.basis === 'resolved' ? 'çözülme' : 'açılış'} tarihine göre)`
+    ? `${f.start ? day(f.start) : 'başlangıç yok'} – ${f.end ? day(f.end) : 'bugün'} (${f.basis === 'resolved' ? 'kapanış' : 'açılış'} tarihine göre)`
     : 'Tüm zamanlar'];
-  if (f.type) parts.push('Tür: ' + TASK_TYPES[f.type]);
+  if (f.type) parts.push('Tür: ' + TYPE_FILTERS[f.type]);
   if (f.bolge) parts.push('Şeflik: ' + f.bolge);
   if (f.screenId) parts.push('Ekran: ' + screenLabel(screenById(f.screenId)));
   if (f.technicianId) parts.push('Teknisyen: ' + (personName(f.technicianId) || '—'));
@@ -2144,7 +2161,7 @@ function materialReportTableHtml(rows) {
         <tbody>${[...r.uses].sort((a, b) => reportTaskSort(a.task, b.task)).map(u => `<tr>
           <td class="mono nowrap">${esc(fmtDate(reportDate(u.task) || u.task.createdAt))}</td>
           <td>${u.task.screenId ? `<a class="link" href="#screen-${esc(u.task.screenId)}" data-action="openScreen" data-id="${esc(u.task.screenId)}">${esc(screenLabel(screenById(u.task.screenId)))}</a>` : '—'}</td>
-          <td><a class="link" href="#task-${esc(u.task.id)}" data-action="openTask" data-id="${esc(u.task.id)}">${esc([taskNo(u.task), u.task.title].filter(Boolean).join(' '))}</a></td>
+          <td><a class="link" href="#task-${esc(u.task.id)}" data-action="openTask" data-id="${esc(u.task.id)}">${esc([taskNo(u.task), taskSummary(u.task, 50)].filter(Boolean).join(' '))}</a></td>
           <td>${statusPill(u.task.status)}</td>
           <td class="num">${fmtQty(u.qty)} ${esc(r.unit)}</td>
         </tr>`).join('')}</tbody>
@@ -2159,7 +2176,7 @@ function serviceReportTableHtml(tasks) {
     <tbody>${[...tasks].sort(reportTaskSort).map(t => `<tr class="clickable" data-action="openTask" data-id="${esc(t.id)}">
       <td class="mono nowrap">${esc(fmtDate(reportDate(t) || t.createdAt))}</td>
       <td>${t.screenId ? `<a class="link" href="#screen-${esc(t.screenId)}" data-action="openScreen" data-id="${esc(t.screenId)}">${esc(screenLabel(screenById(t.screenId)))}</a>` : '—'}</td>
-      <td>${taskNoHtml(t)}${esc(t.title)}</td>
+      <td class="wrap-text">${taskNoHtml(t)}${esc(taskSummary(t, 60) || '—')}</td>
       <td>${typePill(t.type)}</td>
       <td>${statusPill(t.status)}</td>
       <td>${esc(personName(t.assignedTechnicianId) || '—')}</td>
@@ -2203,7 +2220,7 @@ function renderReportsPage(app, topbarActions) {
   const extendedTasks = tasks.filter(t => (t.extensions || []).length);
   const extensionCount = extendedTasks.reduce((sum, t) => sum + t.extensions.length, 0);
 
-  const typeCounts = { ariza: 0, icerik: 0, genel: 0 };
+  const typeCounts = Object.fromEntries(Object.keys(TASK_TYPES).map(k => [k, 0]));
   tasks.forEach(t => { if (typeCounts[t.type] !== undefined) typeCounts[t.type]++; });
 
   const matRows = materialReport(tasks);
@@ -2211,7 +2228,7 @@ function renderReportsPage(app, topbarActions) {
   const maxMat = Math.max(...topMat.map(x => x.qty), 1);
 
   const stopFaults = {};
-  tasks.filter(t => t.type === 'ariza' && t.screenId).forEach(t => { stopFaults[t.screenId] = (stopFaults[t.screenId] || 0) + 1; });
+  tasks.filter(t => isFault(t) && t.screenId).forEach(t => { stopFaults[t.screenId] = (stopFaults[t.screenId] || 0) + 1; });
   const topStops = Object.entries(stopFaults).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([id, count]) => ({ id, name: screenLabel(screenById(id)), count }));
   const summary = reportSummaryText(tasks);
   const maxStopFault = Math.max(...topStops.map(x => x.count), 1);
@@ -2224,8 +2241,8 @@ function renderReportsPage(app, topbarActions) {
     <div class="filter-bar report-filters">
       <div class="field" style="margin:0;"><label>Başlangıç</label><input type="date" data-report-filter="start" value="${f.start}"></div>
       <div class="field" style="margin:0;"><label>Bitiş</label><input type="date" data-report-filter="end" value="${f.end}"></div>
-      <div class="field" style="margin:0;"><label>Tarih ölçütü</label><select data-report-filter="basis">${optionsHtml({ created: 'İşin açılışı', resolved: 'İşin çözülmesi' }, f.basis)}</select></div>
-      <div class="field" style="margin:0;"><label>Tür</label><select data-report-filter="type"><option value="">Tümü</option>${optionsHtml(TASK_TYPES, f.type)}</select></div>
+      <div class="field" style="margin:0;"><label>Tarih ölçütü</label><select data-report-filter="basis">${optionsHtml({ created: 'İşin açılışı', resolved: 'İşin kapanışı' }, f.basis)}</select></div>
+      <div class="field" style="margin:0;"><label>Tür</label><select data-report-filter="type"><option value="">Tümü</option>${optionsHtml(TYPE_FILTERS, f.type)}</select></div>
       <div class="field" style="margin:0;"><label>Şeflik</label><select data-report-filter="bolge"><option value="">Tümü</option>${distinctBolgeler().map(b => `<option value="${esc(b)}" ${f.bolge === b ? 'selected' : ''}>${esc(b)}</option>`).join('')}</select></div>
       <div class="field" style="margin:0;"><label>Ekran</label><select data-report-filter="screenId"><option value="">Tüm ekranlar</option>${[...state.screens].sort(compareScreens).map(s => `<option value="${esc(s.id)}" ${f.screenId === s.id ? 'selected' : ''}>${esc(screenLabel(s))}</option>`).join('')}</select></div>
       <div class="field" style="margin:0;"><label>Teknisyen</label><select data-report-filter="technicianId"><option value="">Tümü</option>${peopleFilterOptionsHtml(f.technicianId)}</select></div>
@@ -2234,8 +2251,8 @@ function renderReportsPage(app, topbarActions) {
 
     <div class="stat-grid">
       <div class="stat-tile"><div class="stat-label">Toplam İş</div><div class="stat-value">${total}</div><div class="stat-sub">seçili aralıkta</div></div>
-      <div class="stat-tile"><div class="stat-label">Ort. Çözüm Süresi</div><div class="stat-value">${avgResolutionDays.toFixed(1)}</div><div class="stat-sub">gün</div></div>
-      <div class="stat-tile"><div class="stat-label">Açık Oranı</div><div class="stat-value">%${openShare}</div><div class="stat-sub">kapatılmamış</div></div>
+      <div class="stat-tile"><div class="stat-label">Ort. Kapanış Süresi</div><div class="stat-value">${avgResolutionDays.toFixed(1)}</div><div class="stat-sub">gün</div></div>
+      <div class="stat-tile"><div class="stat-label">İşlemde Oranı</div><div class="stat-value">%${openShare}</div><div class="stat-sub">kapatılmamış</div></div>
       <div class="stat-tile"><div class="stat-label">Kullanılan Kalem</div><div class="stat-value">${matRows.length}</div><div class="stat-sub">farklı malzeme/işlem</div></div>
       <div class="stat-tile ${overdueCount ? 'accent-crit' : ''}"><div class="stat-label">Süresi Geçen</div><div class="stat-value">${overdueCount}</div><div class="stat-sub">şu an gecikmede</div></div>
       <div class="stat-tile ${extensionCount ? 'accent-warn' : ''}"><div class="stat-label">Süre Uzatma</div><div class="stat-value">${extensionCount}</div><div class="stat-sub">${extendedTasks.length} işte, mazeretli</div></div>
@@ -2263,11 +2280,7 @@ function renderReportsPage(app, topbarActions) {
         </div>
         <div class="section-card">
           <h3>Tür Dağılımı</h3>
-          ${barChart([
-            { label: 'Arıza', value: typeCounts.ariza, color: 'var(--cat-ariza)' },
-            { label: 'İçerik', value: typeCounts.icerik, color: 'var(--cat-icerik)' },
-            { label: 'Genel', value: typeCounts.genel, color: 'var(--cat-genel)' },
-          ])}
+          ${barChart(typeBarItems(typeCounts))}
         </div>
       </div>
     </div>
@@ -2314,12 +2327,12 @@ async function downloadCsv(filename, headers, rows) {
 }
 async function exportTasksCsv() {
   const tasks = filteredReportTasks();
-  const headers = ['İş No', 'Başlık', 'Tür', 'Durum', 'Öncelik', 'Ekran', 'Şeflik', 'Teknisyen', 'Oluşturma', 'Son Tarih', 'Çözülme', 'Süre Uzatma', 'Önce Foto', 'Sonra Foto'];
+  const headers = ['İş No', 'Tür', 'Açıklama', 'Durum', 'Ekran', 'Şeflik', 'Teknisyen', 'Servis Günü', 'Oluşturma', 'Son Tarih', 'Kapanış', 'Süre Uzatma', 'Önce Foto', 'Sonra Foto'];
   const rows = tasks.map(t => {
     const scr = screenById(t.screenId);
     const photoCount = kind => (t.photos || []).filter(p => p.kind === kind).length;
-    return [t.no ?? '', t.title, TASK_TYPES[t.type] || t.type, STATUS_LABELS[t.status] || t.status, PRIORITY_LABELS[t.priority] || t.priority,
-      screenLabel(scr), scr?.bolgeKod || '', personName(t.assignedTechnicianId), fmtDateTime(t.createdAt),
+    return [t.no ?? '', TASK_TYPES[t.type] || t.type, taskText(t), statusLabel(t.status),
+      screenLabel(scr), scr?.bolgeKod || '', personName(t.assignedTechnicianId), SERVICE_DAYS[t.serviceDayType] || '', fmtDateTime(t.createdAt),
       t.dueDate ? fmtDateTime(t.dueDate) : '', t.resolvedAt ? fmtDateTime(t.resolvedAt) : '', (t.extensions || []).length, photoCount('once'), photoCount('sonra')];
   });
   await downloadCsv('is-listesi.csv', headers, rows);
@@ -2332,9 +2345,9 @@ function reportFileName(base) {
 function taskCsvColumns(t) {
   const scr = screenById(t.screenId);
   return [t.no ?? '', fmtDateTime(reportDate(t) || t.createdAt), scr ? (scr.durakAdi || scr.adres || '') : '', scr ? `${scr.durakNo || ''}${scr.yon ? '-' + scr.yon : ''}` : '',
-    scr?.bolgeKod || '', t.title, TASK_TYPES[t.type] || t.type, STATUS_LABELS[t.status] || t.status, personName(t.assignedTechnicianId)];
+    scr?.bolgeKod || '', TASK_TYPES[t.type] || t.type, taskText(t), statusLabel(t.status), personName(t.assignedTechnicianId)];
 }
-const TASK_CSV_HEADERS = ['İş No', 'Tarih', 'Ekran', 'Durak No', 'Şeflik', 'İş', 'Tür', 'Durum', 'Teknisyen'];
+const TASK_CSV_HEADERS = ['İş No', 'Tarih', 'Ekran', 'Durak No', 'Şeflik', 'Tür', 'Açıklama', 'Durum', 'Teknisyen'];
 async function exportMaterialsReportCsv() {
   const rows = materialReport(filteredReportTasks()).map(r => [r.name, r.unit, fmtQty(r.qty), r.taskCount, r.screenCount, r.last ? fmtDate(r.last) : '']);
   await downloadCsv(reportFileName('malzeme-raporu'), ['Malzeme / İşlem', 'Birim', 'Toplam Miktar', 'Servis (İş) Sayısı', 'Ekran Sayısı', 'Son Kullanım'], rows);
@@ -2344,7 +2357,7 @@ async function exportServiceCsv() {
     const days = resolutionDays(t);
     return [...taskCsvColumns(t), materialsSummary(t), t.resolvedAt ? fmtDateTime(t.resolvedAt) : '', days == null ? '' : days.toFixed(1).replace('.', ',')];
   });
-  await downloadCsv(reportFileName('servis-raporu'), [...TASK_CSV_HEADERS, 'Kullanılan Malzeme / İşlem', 'Çözülme', 'Çözüm Süresi (gün)'], rows);
+  await downloadCsv(reportFileName('servis-raporu'), [...TASK_CSV_HEADERS, 'Kullanılan Malzeme / İşlem', 'Kapanış', 'Kapanış Süresi (gün)'], rows);
 }
 // One row per job and material used (a job without materials gets one row with the material columns empty).
 async function exportDetailCsv() {
@@ -2377,10 +2390,19 @@ const actions = {
   deleteTask(el) { const id = el.dataset.id; confirmModal('Bu iş kalıcı olarak silinecek. Emin misiniz?', () => deleteTask(id)); },
   openTask(el) { location.hash = '#task-' + el.dataset.id; },
   setTaskView(el) { taskViewMode = el.dataset.view; render(); },
-  clearTaskFilters() { taskFilters = { type: '', status: '', priority: '', bolge: '', technicianId: '', due: '', q: '' }; render(); },
+  clearTaskFilters() { taskFilters = { ...EMPTY_TASK_FILTERS }; render(); },
   showOverdue() {
-    taskFilters = { type: '', status: '', priority: '', bolge: '', technicianId: '', due: 'overdue', q: '' };
+    taskFilters = { ...EMPTY_TASK_FILTERS, due: 'overdue' };
     if (location.hash === '#tasks') render(); else location.hash = '#tasks';
+  },
+  showDueSoon() {
+    taskFilters = { ...EMPTY_TASK_FILTERS, due: 'soon' };
+    if (location.hash === '#tasks') render(); else location.hash = '#tasks';
+  },
+  saveTaskStatus(el) {
+    const task = state.tasks.find(t => t.id === el.dataset.taskId);
+    const picked = task && pendingStatusFor(task);
+    if (picked) return updateTaskStatus(task.id, picked);
   },
   extendDue(el) { openExtendModal(el.dataset.taskId); },
   confirmComplete() {
@@ -2434,7 +2456,7 @@ const actions = {
     setTimeout(() => document.getElementById('serviceReport')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   },
   openScreen(el) { location.hash = '#screen-' + el.dataset.id; },
-  newTaskForScreen(el) { openTaskFormModal(null, { screenId: el.dataset.id, type: 'ariza' }); },
+  newTaskForScreen(el) { openTaskFormModal(null, { screenId: el.dataset.id, type: 'ekran_ariza' }); },
   setScreenHistoryType(el) { screenHistoryType = el.dataset.type; render(); },
   setMapKind(el) { mapFilters.kind = mapFilters.kind === el.dataset.kind ? '' : el.dataset.kind; mainMapRefit = true; render(); },
 
@@ -2512,6 +2534,15 @@ document.addEventListener('change', (e) => {
     updateScreenField(screenId, screenField, value);
     return;
   }
+  const statusPick = e.target.closest('[data-status-pick]');
+  if (statusPick) {
+    // Only remembered here; the Kaydet button next to it saves the change.
+    pendingStatus = { taskId: statusPick.dataset.taskId, status: statusPick.value };
+    const btn = statusPick.parentElement.querySelector('[data-action="saveTaskStatus"]');
+    const task = state.tasks.find(t => t.id === statusPick.dataset.taskId);
+    if (btn) btn.disabled = !task || statusPick.value === task.status;
+    return;
+  }
   const taskFieldEl = e.target.closest('[data-task-field]');
   if (taskFieldEl) { handleTaskFieldChange(taskFieldEl.dataset.taskId, taskFieldEl.dataset.taskField, taskFieldEl.value); return; }
 });
@@ -2553,7 +2584,11 @@ document.addEventListener('drop', (e) => {
   col.classList.remove('drag-over');
   const taskId = e.dataTransfer.getData('text/plain');
   const newStatus = col.dataset.status;
-  if (taskId && newStatus) updateTaskStatus(taskId, newStatus);
+  const task = state.tasks.find(t => t.id === taskId);
+  if (!task || !newStatus || task.status === newStatus) return;
+  // Like the job page, a status change needs a Kaydet; the photo window has its own when photos are missing.
+  if (needsCompletionPhotos(task, newStatus)) { openCompleteModal(task.id, newStatus); return; }
+  confirmModal(`İş ${taskNo(task)} "${STATUS_LABELS[newStatus]}" durumuna alınsın mı?`, () => updateTaskStatus(task.id, newStatus), 'Kaydet', 'btn-primary');
 });
 
 /* ======================= Boot ======================= */
