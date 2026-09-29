@@ -518,6 +518,12 @@ def admin_required(fn):
     return wrapper
 
 
+def is_company_user(user):
+    """A contractor's employee (firma çalışanı, not the administrator): works on jobs, but does not manage screens
+    or the materials catalogue and does not see reports. Jobs still read screens and materials."""
+    return bool(user) and not user['isAdmin'] and user['orgType'] == 'firma'
+
+
 def csrf_token():
     token = session.get('csrf')
     if not token:
@@ -912,6 +918,8 @@ def collection_record(col, rid):
     if col not in COLLECTIONS:
         raise ApiError(404, 'unknown_collection')
     check_id(rid)
+    if col in ('screens', 'materials') and is_company_user(g.user):
+        raise ApiError(403, 'forbidden_firma')
     table, fields = COLLECTIONS[col]
     conn = db()
     row = conn.execute(f'SELECT * FROM [{table}] WHERE [id]=?', (rid,)).fetchone()
@@ -1096,6 +1104,8 @@ def storage_usage():
 @app.get('/api/stats/storage')
 @login_required
 def storage_stats():
+    if is_company_user(g.user):  # shown only on Raporlar
+        raise ApiError(403, 'forbidden_firma')
     photo_count, photo_bytes = storage_usage()
     return jsonify(photoCount=photo_count, uploadBytes=photo_bytes, dbBytes=os.path.getsize(DATABASE_PATH),
                    quotaBytes=DISK_QUOTA_BYTES)

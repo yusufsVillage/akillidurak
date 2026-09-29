@@ -87,6 +87,7 @@ const API_ERRORS = {
   bad_value: 'Geçersiz bir değer girildi.',
   bad_assignee: 'Seçilen teknisyen bulunamadı; sayfayı yenileyip tekrar deneyin.',
   closed_task_delete: 'Kapanmış iş yalnızca sistem yöneticisi tarafından silinebilir (fotoğrafları kanıttır).',
+  forbidden_firma: 'Bu işlem firma çalışanlarına kapalı.',
   too_many_photos: 'Bir işe en fazla 20 fotoğraf yüklenebilir.',
   disk_full: 'Sunucu diski dolmak üzere; yeni fotoğraf yüklenemiyor. Sistem yöneticisine haber verin.',
   telegram_not_configured: 'Telegram ayarları eksik: WSGI dosyasına TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID yazılıp Reload edilmeli.',
@@ -113,6 +114,10 @@ const state = { screens: [], people: [], materials: [], tasks: [], users: [] };
 
 // The server stamps authors from the session as well; this is only for the text the page composes.
 function getViewerName() { return currentUser?.fullName || 'Bilinmeyen Kullanıcı'; }
+// Contractor staff (firma çalışanı, not the administrator) work on jobs but do not see these pages;
+// the server also refuses their changes to screens and the materials catalogue.
+const COMPANY_HIDDEN_ROUTES = ['screens', 'screenDetail', 'materials', 'reports'];
+function isCompanyUser() { return !!currentUser && !currentUser.isAdmin && currentUser.orgType === 'firma'; }
 
 // Every write carries the session's CSRF token (X-CSRF-Token). A stale token is renewed once and the request retried.
 let csrfToken = null;
@@ -270,6 +275,11 @@ function render() {
   const topbarActions = document.getElementById('topbarActions');
   topbarActions.innerHTML = '';
   if (route.name !== 'map') mainMapHash = null;
+  if (isCompanyUser() && COMPANY_HIDDEN_ROUTES.includes(route.name)) {
+    appEl.innerHTML = emptyStateHtml('Bu sayfa firma çalışanlarına kapalı. Soldaki menüden devam edin.');
+    closeSidebar();
+    return;
+  }
 
   switch (route.name) {
     case 'tasks': renderTasksPage(appEl, topbarActions); break;
@@ -458,7 +468,7 @@ function renderPanelPage(app, topbarActions) {
       <div>
         <div class="section-card">
           <h3>En Çok Arızalanan Ekranlar</h3>
-          ${topStops.length ? `<div class="bars-chart">${topStops.map(s => barRow(s.name, s.count, maxFault, 'var(--crit)', '#screen-' + s.id)).join('')}</div>` : emptyStateHtml('Henüz arıza kaydı yok.')}
+          ${topStops.length ? `<div class="bars-chart">${topStops.map(s => barRow(s.name, s.count, maxFault, 'var(--crit)', isCompanyUser() ? null : '#screen-' + s.id)).join('')}</div>` : emptyStateHtml('Henüz arıza kaydı yok.')}
         </div>
         <div class="section-card">
           <h3>Son Aktiviteler</h3>
@@ -706,13 +716,14 @@ function screenInfoSectionHtml(task) {
     return `<div class="section-card"><h3>Ekran Bilgileri</h3><p class="muted-text">${msg}</p></div>`;
   }
   return screenInfoCardHtml(s, `
-    <a class="btn btn-secondary btn-sm" href="#screen-${esc(s.id)}">Ekranın geçmişi</a>
-    ${hasLocation(s) ? `<a class="btn btn-ghost btn-sm" href="#map-${esc(s.id)}">Haritada göster</a>` : ''}`);
+    ${isCompanyUser() ? '' : `<a class="btn btn-secondary btn-sm" href="#screen-${esc(s.id)}">Ekranın geçmişi</a>`}
+    ${hasLocation(s) ? `<a class="btn btn-ghost btn-sm" href="#map-${esc(s.id)}">Haritada göster</a>` : ''}`, isCompanyUser());
 }
 
 // A screen's record (Excel fields + later additions), edited in place; each field saves when you leave it.
-function screenInfoCardHtml(s, headLinks = '') {
-  const attrs = field => `id="scrf-${field}" data-screen-field="${field}" data-screen-id="${s.id}"`;
+// readOnly: shown to contractor staff, who may not change screen records.
+function screenInfoCardHtml(s, headLinks = '', readOnly = false) {
+  const attrs = field => `id="scrf-${field}" data-screen-field="${field}" data-screen-id="${s.id}"${readOnly ? ' disabled' : ''}`;
   const text = (field, label, cls = '', extra = '') =>
     `<div class="field ${cls}"><label for="scrf-${field}">${label}</label><input type="text" ${attrs(field)} value="${esc(s[field] ?? '')}" ${extra}></div>`;
   const date = (field, label) =>
@@ -727,7 +738,7 @@ function screenInfoCardHtml(s, headLinks = '') {
       <h3>Ekran Bilgileri</h3>
       ${headLinks ? `<div class="head-links">${headLinks}</div>` : ''}
     </div>
-    <p class="hint" style="margin:-8px 0 12px;">Alandan çıkınca ekranın kaydına işlenir; Ekranlar sayfasında da güncellenir.</p>
+    <p class="hint" style="margin:-8px 0 12px;">${readOnly ? 'Ekran bilgilerini yalnızca kurum çalışanları değiştirebilir.' : 'Alandan çıkınca ekranın kaydına işlenir; Ekranlar sayfasında da güncellenir.'}</p>
     <div class="screen-info-grid">
       ${text('durakAdi', 'Durak Adı', 'span-2', 'required')}
       ${text('adres', 'Adres', 'span-2')}
@@ -1497,7 +1508,7 @@ function screenPopupHtml(id) {
       <span>son arıza: ${last ? esc(fmtDate(last)) : '—'}</span>
     </div>
     <div class="map-popup-actions">
-      <a class="btn btn-primary btn-sm" href="#screen-${esc(id)}">Ekran geçmişi</a>
+      ${isCompanyUser() ? '' : `<a class="btn btn-primary btn-sm" href="#screen-${esc(id)}">Ekran geçmişi</a>`}
       <button type="button" class="btn btn-secondary btn-sm" data-action="newTaskForScreen" data-id="${esc(id)}">Yeni iş</button>
       <a class="btn btn-ghost btn-sm" href="${esc(mapUrl(s))}" target="_blank" rel="noopener">Google Maps</a>
     </div>`;
@@ -1528,7 +1539,7 @@ function renderMapPage(app, topbarActions, focusId) {
       <span class="hint" style="margin:0;">İşarete tıklayın: ekranın bilgileri, açık işleri ve geçmişi.</span>
     </div>
     <div id="mapSlot"></div>
-    ${missing.length ? `<p class="map-missing">Konumu girilmemiş ${missing.length} ekran haritada yok: ${missing.map(({ s }) => `<a href="#screen-${esc(s.id)}">${esc(screenLabel(s))}</a>`).join(', ')}. Konum, ekranın sayfasındaki Enlem / Boylam alanlarından eklenir.</p>` : ''}`;
+    ${missing.length ? `<p class="map-missing">Konumu girilmemiş ${missing.length} ekran haritada yok: ${missing.map(({ s }) => isCompanyUser() ? esc(screenLabel(s)) : `<a href="#screen-${esc(s.id)}">${esc(screenLabel(s))}</a>`).join(', ')}.${isCompanyUser() ? '' : ' Konum, ekranın sayfasındaki Enlem / Boylam alanlarından eklenir.'}</p>` : ''}`;
   if (!mainMap) mainMap = createMap({ popupHtml: screenPopupHtml });
   document.getElementById('mapSlot').appendChild(mainMap.el);
   mainMap.setPoints(located.map(({ s, kind }) => ({ id: s.id, lat: s.enlem, lon: s.boylam, kind, title: screenLabel(s) })));
@@ -1843,6 +1854,7 @@ function openUserFormModal(userId) {
         <div class="hint">${u ? 'Kullanıcı adı sonradan değiştirilemez.' : 'Ad ve soyaddan otomatik önerilir; küçük harf, rakam ve nokta kullanın.'}</div>
       </div>
       ${u ? `<label class="choice"><input type="checkbox" name="active" ${u.active ? 'checked' : ''} ${isSelf ? 'disabled' : ''}> Aktif: sisteme giriş yapabilir${isSelf ? ' (kendi hesabınızı pasif yapamazsınız)' : ''}</label>` : ''}
+      <div class="notice">Firma çalışanları Ekranlar, Malzeme Kataloğu ve Raporlar sayfalarını görmez ve ekran bilgilerini değiştiremez; işleri, paneli ve haritayı kullanır.</div>
       ${u ? '' : `<div class="notice">Kaydettiğinizde rastgele bir geçici şifre oluşturulur ve bir kez gösterilir. Kullanıcı ilk girişinde kendi şifresini belirleyecek.</div>`}
     </form>
   `, `
@@ -2552,6 +2564,9 @@ function startApp(me) {
   authRoot.innerHTML = '';
   document.querySelector('.app-shell').hidden = false;
   document.getElementById('navUsers').hidden = !me.isAdmin;
+  document.querySelectorAll('.nav-link').forEach(a => {
+    if (COMPANY_HIDDEN_ROUTES.includes(a.dataset.route)) a.hidden = isCompanyUser();
+  });
   renderUserBox();
   db = createApiDb();
   dbAvailable = true;

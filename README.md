@@ -37,9 +37,11 @@ Ayarlar koda, depoya veya zip'e yazılmaz; PythonAnywhere'deki WSGI dosyasında 
 | `TELEGRAM_CHAT_ID` | Hayır | Bildirimlerin gideceği Telegram grubunun kimliği (aşağıda nasıl bulunur) |
 | `PUBLIC_URL` | Hayır | Telegram mesajlarındaki bağlantılar için sitenin adresi; verilmezse PythonAnywhere hesap adından (`https://KULLANICI.pythonanywhere.com`) hesaplanır. Kendi alan adınız varsa yazın |
 
-Kullanıcı ekleme, düzenleme ve şifre sıfırlama yalnızca `ADMIN_USERNAME` hesabına açıktır; diğer kullanıcılar
-sistemin geri kalanını tam yetkiyle kullanır. Yeni kullanıcıya rastgele bir geçici şifre verilir ve yalnızca bir kez
-gösterilir. Şifreler en az 8 karakter olmalı, harf ve rakam içermeli; ad, soyad veya kullanıcı adı ve çok yaygın
+Kullanıcı ekleme, düzenleme ve şifre sıfırlama yalnızca `ADMIN_USERNAME` hesabına açıktır; yönetici dışındaki
+kullanıcılar teknisyendir. Kurum çalışanı teknisyenler sistemin geri kalanını tam yetkiyle kullanır. Firma çalışanları
+Panel, İşler ve Harita'yı kullanır; Ekranlar, Malzeme Kataloğu ve Raporlar sayfalarını görmez, ekran ve malzeme
+kayıtlarını değiştiremez (sunucu da reddeder), işlerde katalogdan malzeme seçebilir. Kapanmış işi yalnızca yönetici
+silebilir. Yeni kullanıcıya rastgele bir geçici şifre verilir ve yalnızca bir kez gösterilir. Şifreler en az 8 karakter olmalı, harf ve rakam içermeli; ad, soyad veya kullanıcı adı ve çok yaygın
 şifreler kabul edilmez.
 
 ## PythonAnywhere'e ilk kurulum
