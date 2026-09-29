@@ -4,12 +4,15 @@ Akıllı durak ekranları için iş takip sistemi: Ekran Arıza / Yazılım Arı
 kanban), ekran kayıtları, malzeme kataloğu, önce/sonra fotoğrafları, 48 saatlik süre ve mazeretli süre uzatma,
 raporlar (CSV), kullanıcılar.
 
-İş açarken tür, ekran, teknisyen, servis günü ve açıklama zorunludur; bunlar sonradan boşaltılamaz. İş
-**İşlemde** durumunda açılır ve son tarihi açıldığı andan itibaren 48 saattir (elle girilmez, değiştirilemez).
-Süre dolunca iş sayfasındaki "Süreyi Uzat" ile mazeret yazılarak uzatılır. İşin iki durumu vardır: İşlemde ve
-Kapandı. Durum, iş sayfasında seçilip yanındaki **Kaydet** ile değişir; ekrana bağlı iş, önce ve sonra fotoğrafı
-yüklenmeden kapatılamaz. Kapanmış iş aynı yolla yeniden İşlemde yapılabilir. Arıza istatistiklerinde (en çok
-arızalanan ekranlar, harita, ekran geçmişi) Ekran Arıza ve Yazılım Arıza birlikte sayılır.
+İş açarken tür, ekran, teknisyen, servis günü ve açıklama zorunludur. Tür, ekran, teknisyen ve servis günü iş
+açıldıktan sonra değiştirilemez (eski bir işte eksik olan bir kez doldurulabilir); açıklama düzenlenebilir ama
+boşaltılamaz. İş **İşlemde** durumunda açılır ve son tarihi açıldığı andan itibaren 48 saattir (elle girilmez,
+değiştirilemez). Süre dolunca iş sayfasındaki "Süreyi Uzat" ile mazeret yazılarak uzatılır. İşin iki durumu
+vardır: İşlemde ve Kapandı. Durum, iş sayfasında seçilip yanındaki **Kaydet** ile değişir; kapatmak için fotoğraf
+gerekmez (önce/sonra fotoğrafları isteğe bağlıdır, kapanmış işin fotoğrafları silinemez). Kapanmış iş aynı yolla
+yeniden İşlemde yapılabilir. Arıza istatistiklerinde (en çok arızalanan ekranlar, harita, ekran geçmişi) Ekran
+Arıza ve Yazılım Arıza birlikte sayılır. Ekran seçimlerinde ekranlar durak numarası ve yönüyle, "#48A - Çınaraltı"
+biçiminde listelenir.
 
 Eski sürümden geçişte (uygulama ilk açıldığında kendiliğinden) türler Arıza → Ekran Arıza, İçerik → Yazılım
 Arıza, Genel → Altyapı İşi; durumlar Açık/Atandı/İşlemde → İşlemde, Çözüldü/Kapandı → Kapandı olur. Son tarihi

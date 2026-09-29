@@ -61,6 +61,10 @@ OLD_TASK_TYPES = {'ariza': 'ekran_ariza', 'icerik': 'yazilim_ariza', 'genel': 'a
 TASK_DURATION = dt.timedelta(hours=48)  # every job's deadline, counted from when it is opened
 # Needed to open a job, and cannot be emptied later.
 REQUIRED_TASK_FIELDS = ('type', 'screenId', 'assignedTechnicianId', 'serviceDayType', 'description')
+# Cannot be changed once the job is opened (only the description stays editable). An older job that lacks
+# one of them may get it once.
+FIXED_TASK_FIELDS = (('type', 'tur'), ('screenId', 'ekran_id'), ('assignedTechnicianId', 'teknisyen_id'),
+                     ('serviceDayType', 'servis_gunu'))
 SERVICE_DAYS = {'haftaici', 'haftasonu'}
 # A job is İşlemde from the moment it is opened until it is closed.
 TASK_STATUSES = {'islemde', 'kapandi'}
@@ -851,9 +855,9 @@ def get_collection(name):
     return out
 
 
-def check_task_rules(conn, rid, body, row):
-    """- type, screen, technician, service day and description are required
-       - a new job starts as İşlemde; a job tied to a screen needs before and after photos to be closed
+def check_task_rules(conn, body, row):
+    """- type, screen, technician, service day and description are required; the first four are fixed once opened
+       - a new job starts as İşlemde; closing needs no photos (they are optional since 2026-09-29)
        - the deadline is set when the job is opened; afterwards it moves only through /extend (with an excuse)"""
     # A page still open from before the 2026-09-29 renames may send the old names.
     if body.get('type') in OLD_TASK_TYPES:
@@ -870,6 +874,8 @@ def check_task_rules(conn, rid, body, row):
         raise ApiError(400, 'required_fields')
     if row is not None and any(k in body and blank(k) for k in REQUIRED_TASK_FIELDS):
         raise ApiError(400, 'required_fields')
+    if row is not None and any(key in body and row[col] and str(body[key]) != row[col] for key, col in FIXED_TASK_FIELDS):
+        raise ApiError(409, 'task_fields_fixed')
     for key, allowed in (('type', TASK_TYPES), ('status', TASK_STATUSES), ('priority', TASK_PRIORITIES),
                          ('serviceDayType', SERVICE_DAYS)):
         if body.get(key) is not None and body[key] not in allowed:
@@ -883,18 +889,6 @@ def check_task_rules(conn, rid, body, row):
         # A deactivated user may stay on the jobs they had, but gets no new ones.
         if not person or (assignee != current and not person['aktif']):
             raise ApiError(400, 'bad_assignee')
-    old_status = row['durum'] if row else None
-    new_status = body.get('status', old_status)
-    old_screen = row['ekran_id'] if row else None
-    new_screen = body['screenId'] if 'screenId' in body else old_screen
-    # Judged on the state after the change, so the rule cannot be dodged by closing first and linking
-    # the screen afterwards (or both in one request).
-    closing = is_closed(new_status) and not is_closed(old_status)
-    linking_closed = is_closed(new_status) and new_screen != old_screen
-    if new_screen and (closing or linking_closed):
-        kinds = {r[0] for r in conn.execute('SELECT DISTINCT [tur] FROM [is_fotograflari] WHERE [is_id]=?', (rid,))}
-        if not {'once', 'sonra'} <= kinds:
-            raise ApiError(409, 'photos_required')
     # Every job gets TASK_DURATION when it is opened; afterwards the deadline moves only through /extend,
     # which needs an excuse (and only once it has passed).
     if row and 'dueDate' in body and (body['dueDate'] or None) != row['son_tarih']:
@@ -1000,7 +994,7 @@ def collection_record(col, rid):
         if row:
             raise ApiError(409, 'exists')
         if col == 'tasks':
-            check_task_rules(conn, rid, body, None)
+            check_task_rules(conn, body, None)
         with conn:
             insert_record(conn, col, rid, body)
             if col == 'tasks':
@@ -1018,7 +1012,7 @@ def collection_record(col, rid):
     if not row:
         raise ApiError(404, 'not_found')
     if col == 'tasks':
-        check_task_rules(conn, rid, body, row)
+        check_task_rules(conn, body, row)
     present = [f for f in fields if f.js in body and f.js not in READONLY_FIELDS]
     values = [to_db(body[f.js], f.kind) for f in present]
     with conn:

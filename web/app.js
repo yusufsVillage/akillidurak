@@ -78,15 +78,12 @@ function duePill(t) {
   return `<span class="pill ${cls}" title="Son tarih: ${esc(fmtDateTime(t.dueDate))}">${esc(s.text)}</span>`;
 }
 
-function hasBothPhotos(t) { const kinds = new Set((t.photos || []).map(p => p.kind)); return kinds.has('once') && kinds.has('sonra'); }
-// A task tied to a screen needs before/after photos to be closed (the server enforces this too).
-function needsCompletionPhotos(t, newStatus) { return !isClosedStatus(t.status) && isClosedStatus(newStatus) && !!t.screenId && !hasBothPhotos(t); }
 
 const API_ERRORS = {
-  photos_required: 'İş, önce ve sonra fotoğrafı yüklenmeden kapatılamaz.',
   due_fixed: `Her işin süresi açıldığı andan itibaren ${TASK_DURATION_HOURS} saattir; süre dolunca mazeret gösterilerek uzatılabilir.`,
   not_overdue: 'Bu işin süresi henüz dolmadı; süre dolunca mazeret gösterilerek uzatılabilir.',
   required_fields: 'Tür, ekran, teknisyen, servis günü ve açıklama zorunludur.',
+  task_fields_fixed: 'Tür, ekran, teknisyen ve servis günü iş açıldıktan sonra değiştirilemez.',
   reason_required: 'Süreyi uzatmak için mazeret yazmalısınız.',
   due_invalid: 'Yeni son tarih hem şimdiden hem de mevcut son tarihten sonra olmalı.',
   bad_image: 'Yalnızca JPEG, PNG veya WEBP fotoğraf yüklenebilir.',
@@ -192,12 +189,29 @@ function peopleFilterOptionsHtml(selectedId) {
 }
 function materialById(id) { return state.materials.find(m => m.id === id); }
 function toObj(d) { return { id: d.id, ...d.data() }; }
+// Stop code as written on the stops: number and direction, e.g. #48A.
+function screenCode(s) { return s && s.durakNo ? '#' + s.durakNo + (s.yon || '') : ''; }
+// Most names are stored in capitals; lists show them in Turkish title case. Short abbreviations stay as written.
+const KEEP_UPPER_WORDS = new Set(['PTT', 'SGK', 'AKL', 'TOKİ']);
+function titleCaseTr(text) {
+  return String(text || '').replace(/\p{L}+/gu, w => {
+    if (KEEP_UPPER_WORDS.has(w) || (w === w.toLocaleUpperCase('tr') && !/[aeıioöuüAEIİOÖUÜ]/.test(w))) return w;
+    return w.charAt(0).toLocaleUpperCase('tr') + w.slice(1).toLocaleLowerCase('tr');
+  });
+}
+// "#48A - Çınaraltı", used wherever a screen is picked or listed.
 function screenLabel(s) {
   if (!s) return 'Bilinmeyen ekran';
-  const code = s.durakNo ? ('#' + s.durakNo + (s.yon ? '-' + s.yon : '')) : '';
-  return [s.durakAdi || s.adres || 'İsimsiz', code].filter(Boolean).join(' · ');
+  return [screenCode(s), titleCaseTr(s.durakAdi || s.adres) || 'İsimsiz'].filter(Boolean).join(' - ');
 }
-function compareScreens(a, b) { return screenLabel(a).localeCompare(screenLabel(b), 'tr'); }
+// By stop number, then direction, then name.
+function compareScreens(a, b) {
+  const na = parseInt(a.durakNo, 10), nb = parseInt(b.durakNo, 10);
+  if (isNaN(na) !== isNaN(nb)) return isNaN(na) ? 1 : -1;
+  if (!isNaN(na) && na !== nb) return na - nb;
+  return String(a.durakNo || '').localeCompare(String(b.durakNo || ''), 'tr', { numeric: true })
+    || (a.yon || '').localeCompare(b.yon || '', 'tr') || screenLabel(a).localeCompare(screenLabel(b), 'tr');
+}
 function distinctBolgeler() { return [...new Set(state.screens.map(s => s.bolgeKod).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'tr')); }
 function mapUrl(s) { return s && s.enlem != null && s.boylam != null ? `https://www.google.com/maps?q=${s.enlem},${s.boylam}` : null; }
 
@@ -263,7 +277,6 @@ function subscribeCollections() {
     state[col] = snap.docs.map(toObj);
     dbAvailable = true;
     render();
-    if (col === 'tasks') refreshCompleteModal();
   }, onErr);
   ['screens', 'people', 'materials', 'tasks'].forEach(sub);
   if (currentUser?.isAdmin) sub('users');
@@ -355,8 +368,6 @@ function openModal(title, bodyHtml, footHtml, opts = {}) {
 }
 function closeModal() {
   document.getElementById('modalRoot').innerHTML = '';
-  // A cancelled completion leaves the status <select> showing the new value; redraw to put it back.
-  if (pendingComplete) { pendingComplete = null; render(); }
 }
 
 function showToast(msg, type, ms = 2600) {
@@ -596,7 +607,6 @@ async function updateTaskStatus(id, newStatus) {
   const task = state.tasks.find(t => t.id === id);
   if (!task || !db) return;
   if (task.status === newStatus) return;
-  if (needsCompletionPhotos(task, newStatus)) { openCompleteModal(id, newStatus); return; }
   await applyTaskStatus(task, newStatus);
 }
 async function applyTaskStatus(task, newStatus) {
@@ -616,6 +626,17 @@ async function applyTaskStatus(task, newStatus) {
 }
 
 /* ======================= Task detail ======================= */
+// Type, screen, technician and service day are fixed once the job is opened (the server enforces this too).
+// Only an older job that lacks one of them gets a picker here, to fill it in once.
+const FIXED_TASK_FIELDS = ['type', 'screenId', 'assignedTechnicianId', 'serviceDayType'];
+function fixedTaskFieldHtml(task, field, label, valueHtml, optionsFn) {
+  return `<div class="detail-item">
+        <div class="di-label">${label}</div>
+        ${task[field]
+          ? `<div class="di-value">${valueHtml}</div>`
+          : `<select data-task-field="${field}" data-task-id="${esc(task.id)}">${optionsFn()}</select>`}
+      </div>`;
+}
 function renderTaskDetailPage(app, topbarActions, id) {
   const task = state.tasks.find(t => t.id === id);
   if (!task) { app.innerHTML = (dbAvailable ? '' : bannerNoDb()) + emptyStateHtml('İş bulunamadı. Silinmiş olabilir.'); return; }
@@ -652,22 +673,12 @@ function renderTaskDetailPage(app, topbarActions, id) {
     </div>
 
     <div class="detail-grid">
-      <div class="detail-item">
-        <div class="di-label">Tür</div>
-        <select data-task-field="type" data-task-id="${task.id}">${requiredOptionsHtml(TASK_TYPES, task.type)}</select>
-      </div>
-      <div class="detail-item">
-        <div class="di-label">Ekran</div>
-        <select data-task-field="screenId" data-task-id="${task.id}">${screenOptionsHtml(sortedScreens, task.screenId)}</select>
-      </div>
-      <div class="detail-item">
-        <div class="di-label">Teknisyen</div>
-        <select data-task-field="assignedTechnicianId" data-task-id="${task.id}">${assigneeOptionsHtml(task.assignedTechnicianId)}</select>
-      </div>
-      <div class="detail-item">
-        <div class="di-label">Servis Günü</div>
-        <select data-task-field="serviceDayType" data-task-id="${task.id}">${requiredOptionsHtml(SERVICE_DAYS, task.serviceDayType)}</select>
-      </div>
+      ${fixedTaskFieldHtml(task, 'type', 'Tür', esc(TASK_TYPES[task.type] || task.type), () => requiredOptionsHtml(TASK_TYPES, ''))}
+      ${fixedTaskFieldHtml(task, 'screenId', 'Ekran', screenById(task.screenId) && !isCompanyUser()
+        ? `<a class="link" href="#screen-${esc(task.screenId)}">${esc(screenLabel(screenById(task.screenId)))}</a>` : esc(screenLabel(screenById(task.screenId))),
+        () => screenOptionsHtml(sortedScreens, ''))}
+      ${fixedTaskFieldHtml(task, 'assignedTechnicianId', 'Teknisyen', esc(personName(task.assignedTechnicianId) || 'Bilinmeyen kişi'), () => assigneeOptionsHtml(''))}
+      ${fixedTaskFieldHtml(task, 'serviceDayType', 'Servis Günü', esc(SERVICE_DAYS[task.serviceDayType] || task.serviceDayType), () => requiredOptionsHtml(SERVICE_DAYS, ''))}
       <div class="detail-item">
         <div class="di-label">Son Tarih</div>
         <div class="di-value">${task.dueDate ? `<span class="mono">${esc(fmtDateTime(task.dueDate))}</span>${due ? ' ' + duePill(task) : ''}` : '—'}</div>
@@ -691,7 +702,6 @@ function renderTaskDetailPage(app, topbarActions, id) {
 
     <div class="section-card">
       <h3>Ekran Fotoğrafları</h3>
-      ${task.screenId && !isClosedStatus(task.status) ? '<div class="section-sub">İşi kapatmak için önce ve sonra fotoğrafı gerekir.</div>' : ''}
       ${photoPanelHtml(task)}
     </div>
 
@@ -745,7 +755,7 @@ function renderTaskDetailPage(app, topbarActions, id) {
 function screenInfoSectionHtml(task) {
   const s = screenById(task.screenId);
   if (!s) {
-    const msg = task.screenId ? 'Bağlı ekran bulunamadı; silinmiş olabilir.' : 'Bu işe bağlı ekran yok. Yukarıdaki "Ekran" alanından seçebilirsiniz.';
+    const msg = task.screenId ? 'Bağlı ekran bulunamadı; silinmiş olabilir.' : 'Bu işe bağlı ekran yok. Yukarıdaki "Ekran" alanından bir kez seçebilirsiniz.';
     return `<div class="section-card"><h3>Ekran Bilgileri</h3><p class="muted-text">${msg}</p></div>`;
   }
   return screenInfoCardHtml(s, `
@@ -802,7 +812,7 @@ async function handleTaskFieldChange(taskId, field, value) {
   if (!db) return;
   const task = state.tasks.find(t => t.id === taskId);
   if (!task) return;
-  if (!['type', 'screenId', 'assignedTechnicianId', 'serviceDayType'].includes(field)) return;
+  if (!FIXED_TASK_FIELDS.includes(field) || task[field]) return;
   if (!value) { showToast(API_ERRORS.required_fields, 'error'); render(); return; }
   const patch = { updatedAt: new Date().toISOString(), [field]: value };
   try { await db.doc('tasks/' + taskId).update(patch); showToast('Kaydedildi'); }
@@ -946,30 +956,6 @@ async function removePhoto(photoId) {
   } catch (e) { showToast(apiErrorText(e, 'Silinemedi'), 'error'); }
 }
 
-// Shown when a screen task is being closed without both photo sets; the status changes once they exist.
-let pendingComplete = null;
-function openCompleteModal(taskId, newStatus) {
-  openModal('İşi Tamamla: Ekran Fotoğrafları', '<div id="completeModalBody"></div>', `
-    <button class="btn btn-secondary" data-action="closeModal">Vazgeç</button>
-    <button class="btn btn-primary" data-action="confirmComplete" id="confirmCompleteBtn" disabled>Kaydet</button>
-  `, { large: true });
-  pendingComplete = { taskId, status: newStatus };
-  refreshCompleteModal();
-}
-function refreshCompleteModal() {
-  const body = document.getElementById('completeModalBody');
-  if (!body || !pendingComplete) return;
-  const task = state.tasks.find(t => t.id === pendingComplete.taskId);
-  if (!task) return;
-  const ready = hasBothPhotos(task);
-  body.innerHTML = `
-    <p class="modal-lead">Bu iş <strong>${esc(screenLabel(screenById(task.screenId)))}</strong> ekranına bağlı. Kapatmadan önce ekranın işten <strong>önceki</strong> ve <strong>sonraki</strong> halinin fotoğraflarını yükleyin.</p>
-    ${photoPanelHtml(task)}
-    <div class="${ready ? 'photo-ready' : 'photo-missing'}">${ready ? 'Fotoğraflar tamam, durumu güncelleyebilirsiniz.' : 'Her iki bölüme de en az bir fotoğraf gerekli.'}</div>`;
-  const btn = document.getElementById('confirmCompleteBtn');
-  if (btn) btn.disabled = !ready;
-}
-
 /* ======================= Deadline extension ======================= */
 function openExtendModal(taskId) {
   const task = state.tasks.find(t => t.id === taskId);
@@ -1012,18 +998,19 @@ function openTaskFormModal(taskId, preset = {}) {
   const isEdit = !!task;
   const sortedScreens = [...state.screens].sort(compareScreens);
   const screenId = task ? task.screenId : preset.screenId;
+  const lock = field => (task && task[field] ? 'disabled' : 'required');
   openModal(isEdit ? 'İşi Düzenle' : 'Yeni İş Oluştur', `
     <form id="taskFormInner" data-form="taskForm" data-task-id="${task?.id || ''}">
-      <div class="field"><label for="taskFormType">Tür</label><select id="taskFormType" name="type" required>${requiredOptionsHtml(TASK_TYPES, task ? task.type : (preset.type || 'ekran_ariza'))}</select></div>
-      <div class="field"><label for="taskFormScreen">Ekran</label><select id="taskFormScreen" name="screenId" required>${screenOptionsHtml(sortedScreens, screenId)}</select></div>
+      <div class="field"><label for="taskFormType">Tür</label><select id="taskFormType" name="type" ${lock('type')}>${requiredOptionsHtml(TASK_TYPES, task ? task.type : (preset.type || 'ekran_ariza'))}</select></div>
+      <div class="field"><label for="taskFormScreen">Ekran</label><select id="taskFormScreen" name="screenId" ${lock('screenId')}>${screenOptionsHtml(sortedScreens, screenId)}</select></div>
       <div class="field-row">
-        <div class="field"><label for="taskFormTech">Teknisyen</label><select id="taskFormTech" name="assignedTechnicianId" required>${assigneeOptionsHtml(task?.assignedTechnicianId)}</select></div>
-        <div class="field"><label for="taskFormDay">Servis Günü</label><select id="taskFormDay" name="serviceDayType" required>${requiredOptionsHtml(SERVICE_DAYS, task?.serviceDayType)}</select></div>
+        <div class="field"><label for="taskFormTech">Teknisyen</label><select id="taskFormTech" name="assignedTechnicianId" ${lock('assignedTechnicianId')}>${assigneeOptionsHtml(task?.assignedTechnicianId)}</select></div>
+        <div class="field"><label for="taskFormDay">Servis Günü</label><select id="taskFormDay" name="serviceDayType" ${lock('serviceDayType')}>${requiredOptionsHtml(SERVICE_DAYS, task?.serviceDayType)}</select></div>
       </div>
       <div class="field"><label for="taskFormDesc">Açıklama</label><textarea id="taskFormDesc" name="description" rows="4" required placeholder="Ne yapılacak? Örn. ekran yanmıyor, güç kaynağı kontrol edilecek">${esc(task?.description || '')}</textarea></div>
       <div class="hint">${isEdit
-        ? `Son tarih: <strong>${esc(fmtDateTime(task.dueDate))}</strong>. İşin süresi değiştirilemez; süre dolunca iş sayfasından mazeret gösterilerek uzatılabilir.`
-        : `Tüm alanlar zorunludur. İş "İşlemde" olarak açılır ve süresi ${TASK_DURATION_HOURS} saattir; son tarih kendiliğinden verilir.`}</div>
+        ? `Tür, ekran, teknisyen ve servis günü iş açıldıktan sonra değiştirilemez; burada yalnızca açıklama düzenlenir. Son tarih: <strong>${esc(fmtDateTime(task.dueDate))}</strong>; süre dolunca iş sayfasından mazeret gösterilerek uzatılabilir.`
+        : `Tüm alanlar zorunludur. <strong>Tür, ekran, teknisyen ve servis günü iş açıldıktan sonra değiştirilemez.</strong> İş "İşlemde" olarak açılır ve süresi ${TASK_DURATION_HOURS} saattir; son tarih kendiliğinden verilir.`}</div>
     </form>
   `, `
     <button class="btn btn-secondary" data-action="closeModal">Vazgeç</button>
@@ -1033,14 +1020,11 @@ function openTaskFormModal(taskId, preset = {}) {
 async function saveTaskForm(form) {
   if (!db) { showToast('Veritabanı kullanılamıyor', 'error'); return; }
   const taskId = form.dataset.taskId;
-  const fd = new FormData(form);
-  const fields = {
-    type: fd.get('type') || '',
-    screenId: fd.get('screenId') || '',
-    assignedTechnicianId: fd.get('assignedTechnicianId') || '',
-    serviceDayType: fd.get('serviceDayType') || '',
-    description: (fd.get('description') || '').toString().trim(),
-  };
+  const fields = {};
+  for (const key of [...FIXED_TASK_FIELDS, 'description']) {
+    const el = form.elements[key];
+    if (!el.disabled) fields[key] = (el.value || '').trim(); // disabled: fixed once the job was opened
+  }
   if (Object.values(fields).some(v => !v)) { showToast(API_ERRORS.required_fields, 'error'); return; }
   const now = new Date().toISOString();
   if (taskId) {
@@ -1517,7 +1501,7 @@ function screenPopupHtml(id) {
   return `
     <button type="button" class="map-popup-close" data-map-close aria-label="Kapat">×</button>
     <div class="map-popup-title">${esc(s.durakAdi || s.adres || 'İsimsiz')}</div>
-    <div class="map-popup-meta">#${esc(s.durakNo || '—')}${s.yon ? '-' + esc(s.yon) : ''} · ${esc(s.bolgeKod || 'şeflik yok')} · ${s.ekranTipi ? 'Tip ' + esc(s.ekranTipi) : 'tip yok'}</div>
+    <div class="map-popup-meta">${esc(screenCode(s) || '#—')} · ${esc(s.bolgeKod || 'şeflik yok')} · ${s.ekranTipi ? 'Tip ' + esc(s.ekranTipi) : 'tip yok'}</div>
     <div class="map-popup-stats">
       <span><strong>${open.length}</strong> iş işlemde</span>
       <span><strong>${faults.length}</strong> arıza</span>
@@ -1598,7 +1582,7 @@ function renderScreenDetailPage(app, topbarActions, id) {
       <div class="detail-title">
         <h2>${esc(s.durakAdi || s.adres || 'İsimsiz')}</h2>
         <div class="tag-row">
-          <span class="pill pill-neutral mono">#${esc(s.durakNo || '—')}${s.yon ? '-' + esc(s.yon) : ''}</span>
+          <span class="pill pill-neutral mono">${esc(screenCode(s) || '#—')}</span>
           ${s.bolgeKod ? `<span class="pill pill-neutral">${esc(s.bolgeKod)}</span>` : ''}
           ${s.ekranTipi ? `<span class="pill pill-neutral">Tip ${esc(s.ekranTipi)}</span>` : ''}
           ${s.elektrikKaynagi ? `<span class="pill pill-neutral">${esc(s.elektrikKaynagi)}</span>` : ''}
@@ -2344,7 +2328,7 @@ function reportFileName(base) {
 }
 function taskCsvColumns(t) {
   const scr = screenById(t.screenId);
-  return [t.no ?? '', fmtDateTime(reportDate(t) || t.createdAt), scr ? (scr.durakAdi || scr.adres || '') : '', scr ? `${scr.durakNo || ''}${scr.yon ? '-' + scr.yon : ''}` : '',
+  return [t.no ?? '', fmtDateTime(reportDate(t) || t.createdAt), scr ? (scr.durakAdi || scr.adres || '') : '', scr ? screenCode(scr).slice(1) : '',
     scr?.bolgeKod || '', TASK_TYPES[t.type] || t.type, taskText(t), statusLabel(t.status), personName(t.assignedTechnicianId)];
 }
 const TASK_CSV_HEADERS = ['İş No', 'Tarih', 'Ekran', 'Durak No', 'Şeflik', 'Tür', 'Açıklama', 'Durum', 'Teknisyen'];
@@ -2405,14 +2389,7 @@ const actions = {
     if (picked) return updateTaskStatus(task.id, picked);
   },
   extendDue(el) { openExtendModal(el.dataset.taskId); },
-  confirmComplete() {
-    const pc = pendingComplete;
-    const task = pc && state.tasks.find(t => t.id === pc.taskId);
-    pendingComplete = null;
-    closeModal();
-    if (task) applyTaskStatus(task, pc.status);
-  },
-  // Two-step delete without a modal, so it also works inside the completion modal.
+  // Two-step delete without a confirmation window.
   deletePhoto(el) {
     if (!el.dataset.armed) {
       el.dataset.armed = '1';
@@ -2586,8 +2563,7 @@ document.addEventListener('drop', (e) => {
   const newStatus = col.dataset.status;
   const task = state.tasks.find(t => t.id === taskId);
   if (!task || !newStatus || task.status === newStatus) return;
-  // Like the job page, a status change needs a Kaydet; the photo window has its own when photos are missing.
-  if (needsCompletionPhotos(task, newStatus)) { openCompleteModal(task.id, newStatus); return; }
+  // Like the job page, a status change needs a Kaydet.
   confirmModal(`İş ${taskNo(task)} "${STATUS_LABELS[newStatus]}" durumuna alınsın mı?`, () => updateTaskStatus(task.id, newStatus), 'Kaydet', 'btn-primary');
 });
 
