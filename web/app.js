@@ -118,7 +118,9 @@ const API_ERRORS = {
   bad_username: 'Kullanıcı adı 3-40 karakter olmalı; yalnızca küçük harf, rakam, nokta, tire ve alt çizgi içerebilir.',
   name_required: 'Ad ve soyad gerekli.',
   bad_org_type: 'Kurum veya firma çalışanı seçin.',
-  last_admin: 'Sistem yöneticisi hesabı pasif yapılamaz.',
+  last_admin: 'Ana sistem yöneticisi hesabı pasif yapılamaz ve yöneticiliği alınamaz.',
+  self_admin: 'Kendi yetkinizi veya hesabınızın durumunu değiştiremezsiniz.',
+  main_admin_reset: 'Ana sistem yöneticisinin şifresi buradan sıfırlanamaz; kurulumdaki ADMIN_PASSWORD ile değiştirilir.',
   forbidden: 'Bu işlem yalnızca sistem yöneticisine açık.',
   decode: 'Fotoğraf açılamadı; JPEG veya PNG kullanın.',
 };
@@ -1722,20 +1724,20 @@ function renderUsersPage(app, topbarActions) {
     if (t.assignedTechnicianId && !isClosedStatus(t.status)) openCountByPerson.set(t.assignedTechnicianId, (openCountByPerson.get(t.assignedTechnicianId) || 0) + 1);
   });
   const content = `
-    <p class="page-lead">Sistem yöneticisi dışındaki kullanıcılar teknisyendir; işler bu listedeki kişilere atanır. Kullanıcı ekleme, düzenleme ve şifre sıfırlama yalnızca sistem yöneticisine açıktır; teknisyenler sistemin geri kalanını tam yetkiyle kullanır. Yeni kullanıcıya rastgele bir geçici şifre verilir ve yalnızca bir kez gösterilir; kullanıcı ilk girişinde kendi şifresini belirler. Şifresini unutan kullanıcı için "Şifreyi Sıfırla" kullanın.</p>
+    <p class="page-lead">Sistem yöneticisi olmayan kullanıcılar teknisyendir; işler bu listedeki kişilere atanır. Kullanıcı ekleme, düzenleme ve şifre sıfırlama yalnızca sistem yöneticilerine açıktır; bir kullanıcıyı yönetici yapmak için "Düzenle"de "Sistem yöneticisi"ni işaretleyin. Ana yöneticinin (kurulumda belirlenen) yetkisi ve şifresi buradan değiştirilemez. Teknisyenler sistemin geri kalanını tam yetkiyle kullanır. Yeni kullanıcıya rastgele bir geçici şifre verilir ve yalnızca bir kez gösterilir; kullanıcı ilk girişinde kendi şifresini belirler. Şifresini unutan kullanıcı için "Şifreyi Sıfırla" kullanın.</p>
     ${!users.length ? emptyStateHtml('Kullanıcı yok.') : `<div class="table-wrap"><table>
       <thead><tr><th>Ad Soyad</th><th>Kullanıcı Adı</th><th>Çalışan Türü</th><th>Yetki</th><th class="num">İşlemdeki İş</th><th>Durum</th><th>Son Giriş</th><th></th></tr></thead>
       <tbody>${users.map(u => `<tr>
         <td>${esc(u.fullName)}${u.id === currentUser.id ? ' <span class="muted-inline">(siz)</span>' : ''}</td>
         <td class="mono">${esc(u.username)}</td>
         <td>${orgPill(u.orgType)}</td>
-        <td>${u.isAdmin ? 'Sistem yöneticisi' : 'Teknisyen'}</td>
+        <td>${u.isMainAdmin ? 'Sistem yöneticisi (ana)' : u.isAdmin ? 'Sistem yöneticisi' : 'Teknisyen'}</td>
         <td class="num mono">${openCountByPerson.get(u.id) || 0}</td>
         <td>${userStatusPill(u)}</td>
         <td class="mono nowrap">${u.lastLoginAt ? esc(fmtDateTime(u.lastLoginAt)) : '—'}</td>
         <td class="row-actions">
           <button class="btn btn-ghost btn-sm" data-action="editUser" data-id="${u.id}">Düzenle</button>
-          ${u.id === currentUser.id ? '' : `<button class="btn btn-ghost btn-sm" data-action="resetUserPassword" data-id="${u.id}">Şifreyi Sıfırla</button>`}
+          ${u.id === currentUser.id || u.isMainAdmin ? '' : `<button class="btn btn-ghost btn-sm" data-action="resetUserPassword" data-id="${u.id}">Şifreyi Sıfırla</button>`}
         </td>
       </tr>`).join('')}</tbody>
     </table></div>`}
@@ -1837,6 +1839,7 @@ function suggestUsername(first, last) {
 function openUserFormModal(userId) {
   const u = userId ? state.users.find(x => x.id === userId) : null;
   const isSelf = !!u && u.id === currentUser.id;
+  const locked = isSelf || !!u?.isMainAdmin;
   const orgChoice = (value) => `<label class="choice"><input type="radio" name="orgType" value="${value}" ${u?.orgType === value ? 'checked' : ''} required> ${ORG_TYPE_LABELS[value]}</label>`;
   openModal(u ? 'Kullanıcıyı Düzenle' : 'Yeni Kullanıcı', `
     <form id="userFormInner" data-form="userForm" data-user-id="${u?.id || ''}">
@@ -1853,8 +1856,10 @@ function openUserFormModal(userId) {
         <input id="ufUser" name="username" required pattern="[a-z0-9._\\-]{3,40}" maxlength="40" autocapitalize="none" spellcheck="false" value="${esc(u?.username || '')}" ${u ? 'disabled' : ''}>
         <div class="hint">${u ? 'Kullanıcı adı sonradan değiştirilemez.' : 'Ad ve soyaddan otomatik önerilir; küçük harf, rakam ve nokta kullanın.'}</div>
       </div>
-      ${u ? `<label class="choice"><input type="checkbox" name="active" ${u.active ? 'checked' : ''} ${isSelf ? 'disabled' : ''}> Aktif: sisteme giriş yapabilir${isSelf ? ' (kendi hesabınızı pasif yapamazsınız)' : ''}</label>` : ''}
-      <div class="notice">Firma çalışanları Ekranlar, Malzeme Kataloğu ve Raporlar sayfalarını görmez ve ekran bilgilerini değiştiremez; işleri, paneli ve haritayı kullanır.</div>
+      ${u ? `<label class="choice"><input type="checkbox" name="active" ${u.active ? 'checked' : ''} ${locked ? 'disabled' : ''}> Aktif: sisteme giriş yapabilir</label>
+      <label class="choice"><input type="checkbox" name="isAdmin" ${u.isAdmin ? 'checked' : ''} ${locked ? 'disabled' : ''}> Sistem yöneticisi: kullanıcıları ekler ve düzenler, şifre sıfırlar, kapanmış işleri silebilir</label>
+      ${locked ? `<div class="hint">${u.isMainAdmin ? 'Ana sistem yöneticisinin yetkisi ve durumu değiştirilemez (kurulumda WSGI dosyasında belirlenir).' : 'Kendi yetkinizi ve hesabınızın durumunu değiştiremezsiniz.'}</div>` : ''}` : ''}
+      <div class="notice">Firma çalışanları (sistem yöneticisi değillerse) Ekranlar, Malzeme Kataloğu ve Raporlar sayfalarını görmez ve ekran bilgilerini değiştiremez; işleri, paneli ve haritayı kullanır.</div>
       ${u ? '' : `<div class="notice">Kaydettiğinizde rastgele bir geçici şifre oluşturulur ve bir kez gösterilir. Kullanıcı ilk girişinde kendi şifresini belirleyecek.</div>`}
     </form>
   `, `
@@ -1882,6 +1887,7 @@ async function saveUserForm(form) {
   try {
     if (id) {
       if (form.elements.active && !form.elements.active.disabled) body.active = form.elements.active.checked;
+      if (form.elements.isAdmin && !form.elements.isAdmin.disabled) body.isAdmin = form.elements.isAdmin.checked;
       await db.doc('users/' + id).update(body);
       closeModal();
       // Your own name is shown in the sidebar.

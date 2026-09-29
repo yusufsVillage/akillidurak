@@ -51,7 +51,7 @@ Ayarlar koda, depoya veya zip'e yazılmaz; PythonAnywhere'deki WSGI dosyasında 
 | Değişken | Gerekli mi | Açıklama |
 | --- | --- | --- |
 | `SECRET_KEY` | Evet | Oturum çerezlerini imzalar. Uzun, rastgele bir değer olmalı ve gizli kalmalı |
-| `ADMIN_USERNAME` | Evet | Tek sistem yöneticisinin kullanıcı adı (küçük harf, rakam, `.` `_` `-`) |
+| `ADMIN_USERNAME` | Evet | Ana sistem yöneticisinin kullanıcı adı (küçük harf, rakam, `.` `_` `-`). Başka kullanıcılar uygulamadan yönetici yapılabilir |
 | `ADMIN_PASSWORD` | İlk kurulumda | Yöneticinin ilk şifresi. İlk girişte değiştirmesi istenir. Sonradan değiştirilirse yöneticinin şifresi bu değere sıfırlanır (şifre unutulursa) |
 | `SESSION_COOKIE_SECURE` | PythonAnywhere'de `1` | Oturum çerezi yalnızca HTTPS üzerinden gönderilir |
 | `DATABASE_PATH` | Önerilir | Veritabanı dosyası. Verilmezse kodun yanında `app.db` |
@@ -60,8 +60,11 @@ Ayarlar koda, depoya veya zip'e yazılmaz; PythonAnywhere'deki WSGI dosyasında 
 | `TELEGRAM_CHAT_ID` | Hayır | Bildirimlerin gideceği Telegram grubunun kimliği (aşağıda nasıl bulunur) |
 | `PUBLIC_URL` | Hayır | Telegram mesajlarındaki bağlantılar için sitenin adresi; verilmezse PythonAnywhere hesap adından (`https://KULLANICI.pythonanywhere.com`) hesaplanır. Kendi alan adınız varsa yazın |
 
-Kullanıcı ekleme, düzenleme ve şifre sıfırlama yalnızca `ADMIN_USERNAME` hesabına açıktır; yönetici dışındaki
-kullanıcılar teknisyendir. Kurum çalışanı teknisyenler sistemin geri kalanını tam yetkiyle kullanır. Firma çalışanları
+Kullanıcı ekleme, düzenleme ve şifre sıfırlama yalnızca sistem yöneticilerine açıktır; yönetici olmayan
+kullanıcılar teknisyendir. Ana yönetici `ADMIN_USERNAME` hesabıdır; o veya başka bir yönetici, Kullanıcılar
+sayfasında "Düzenle" > "Sistem yöneticisi" ile başka kullanıcıları da yönetici yapabilir ya da yetkilerini alabilir.
+Ana yöneticinin yetkisi ve aktifliği uygulamadan değiştirilemez, şifresi de sıfırlanamaz (yalnızca `ADMIN_PASSWORD`
+ile); kimse kendi yetkisini veya hesabını değiştiremez. Kurum çalışanı teknisyenler sistemin geri kalanını tam yetkiyle kullanır. Firma çalışanları
 Panel, İşler ve Harita'yı kullanır; Ekranlar, Malzeme Kataloğu ve Raporlar sayfalarını görmez, ekran ve malzeme
 kayıtlarını değiştiremez (sunucu da reddeder), işlerde katalogdan malzeme seçebilir. Kapanmış işi yalnızca yönetici
 silebilir. Yeni kullanıcıya rastgele bir geçici şifre verilir ve yalnızca bir kez gösterilir. Şifreler en az 8 karakter olmalı, harf ve rakam içermeli; ad, soyad veya kullanıcı adı ve çok yaygın

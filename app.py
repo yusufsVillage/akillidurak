@@ -365,10 +365,15 @@ def seed_once(conn):
     conn.execute("INSERT OR REPLACE INTO [ayarlar] ([anahtar],[deger]) VALUES ('ilk_veri', ?)", (now_iso(),))
 
 
+def main_admin_username():
+    return (os.environ.get('ADMIN_USERNAME') or '').strip().lower()
+
+
 def ensure_admin(conn):
-    """ADMIN_USERNAME is the one system administrator; created with ADMIN_PASSWORD if missing.
-    Changing ADMIN_PASSWORD later resets the administrator's password to it (for a forgotten password)."""
-    username = (os.environ.get('ADMIN_USERNAME') or '').strip().lower()
+    """ADMIN_USERNAME is the main system administrator; created with ADMIN_PASSWORD if missing, and always an
+    active administrator. Changing ADMIN_PASSWORD later resets its password to it (for a forgotten password).
+    Other users may be made administrators on the Kullanıcılar page; that is left as it is here."""
+    username = main_admin_username()
     password = os.environ.get('ADMIN_PASSWORD') or ''
     if not username:
         return
@@ -395,7 +400,6 @@ def ensure_admin(conn):
     if changed:
         conn.execute("INSERT OR REPLACE INTO [ayarlar] ([anahtar],[deger]) VALUES ('yonetici_sifre_izi', ?)",
                      (generate_password_hash(password),))
-    conn.execute('UPDATE [kullanicilar] SET [yonetici]=0 WHERE [kullanici_adi]<>? AND [yonetici]<>0', (username,))
     conn.execute('UPDATE [kullanicilar] SET [yonetici]=1, [aktif]=1 WHERE [kullanici_adi]=?', (username,))
 
 
@@ -531,6 +535,8 @@ def user_json(row):
         'id': row['id'], 'username': row['kullanici_adi'],
         'firstName': first, 'lastName': last, 'fullName': f'{first} {last}'.strip(),
         'orgType': row['calisan_turu'], 'isAdmin': bool(row['yonetici']), 'active': bool(row['aktif']),
+        # The ADMIN_USERNAME account: its rights, status and password are not changed from the page.
+        'isMainAdmin': bool(row['yonetici']) and row['kullanici_adi'] == main_admin_username(),
         'mustChangePassword': bool(row['sifre_degismeli']),
         'createdAt': row['olusturma'], 'lastLoginAt': row['son_giris'],
     }
@@ -800,7 +806,7 @@ def users_create():
         raise ApiError(409, 'username_taken')
     uid = 'u_' + uuid.uuid4().hex[:16]
     password = temporary_password()
-    # New users never get user-management rights; that stays with the system administrator.
+    # New users start without administrator rights; an administrator can grant them on the edit form.
     with conn:
         conn.execute(
             'INSERT INTO [kullanicilar] ([id],[kullanici_adi],[ad],[soyad],[calisan_turu],[yonetici],[aktif],'
@@ -824,14 +830,20 @@ def users_update(uid):
     last = str(body['lastName']).strip() if 'lastName' in body else cur['lastName']
     org = body['orgType'] if 'orgType' in body else cur['orgType']
     active = body['active'] is True if 'active' in body else cur['active']
+    admin = body['isAdmin'] is True if 'isAdmin' in body else cur['isAdmin']
     check_user_fields(first, last, org)
-    # The administrator flag cannot be changed here, and the administrator account cannot be deactivated.
-    if cur['isAdmin'] and not active:
+    # The main administrator always stays an active administrator (it is set in the WSGI file), and nobody
+    # takes away their own rights or account, so there is always someone to manage users.
+    if cur['isMainAdmin'] and (not active or not admin):
         raise ApiError(409, 'last_admin')
+    if uid == g.user['id'] and (not active or admin != cur['isAdmin']):
+        raise ApiError(409, 'self_admin')
     bump = 1 if cur['active'] and not active else 0
     with conn:
-        conn.execute('UPDATE [kullanicilar] SET [ad]=?, [soyad]=?, [calisan_turu]=?, [aktif]=?, '
-                     '[oturum_surumu]=[oturum_surumu]+? WHERE [id]=?', (first, last, org, int(active), bump, uid))
+        conn.execute('UPDATE [kullanicilar] SET [ad]=?, [soyad]=?, [calisan_turu]=?, [aktif]=?, [yonetici]=?, '
+                     '[oturum_surumu]=[oturum_surumu]+? WHERE [id]=?', (first, last, org, int(active), int(admin), bump, uid))
+    if admin != cur['isAdmin']:
+        log.info('yonetici yetkisi %s: %s (%s)', 'verildi' if admin else 'alindi', cur['username'], g.user['username'])
     return jsonify(ok=True)
 
 
@@ -842,8 +854,12 @@ def users_reset_password(uid):
     if uid == g.user['id']:
         raise ApiError(400, 'self_reset')
     conn = db()
-    if not conn.execute('SELECT 1 FROM [kullanicilar] WHERE [id]=?', (uid,)).fetchone():
+    row = conn.execute('SELECT * FROM [kullanicilar] WHERE [id]=?', (uid,)).fetchone()
+    if not row:
         raise ApiError(404, 'not_found')
+    # Otherwise another administrator could take over the main account; its password is reset with ADMIN_PASSWORD.
+    if user_json(row)['isMainAdmin']:
+        raise ApiError(403, 'main_admin_reset')
     password = temporary_password()
     with conn:
         conn.execute('UPDATE [kullanicilar] SET [sifre_ozeti]=?, [sifre_degismeli]=1, [oturum_surumu]=[oturum_surumu]+1 '
